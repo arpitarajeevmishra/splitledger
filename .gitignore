@@ -3,6 +3,14 @@
 .env.*
 !.env.example
 
+# ---- internal documentation: kept local, not published ----
+# The docs/ tree stays on disk and under active use; it is simply not pushed.
+# README.md and .github/**/*.md are deliberately NOT ignored: the former is the
+# repository's front page, the latter are functional GitHub templates that stop
+# working if they are absent.
+docs/
+frontend/README.md
+
 # ---- key material: must never be committed ----
 # Defence in depth. Publishing a private key is not a recoverable mistake.
 *.pem

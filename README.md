@@ -64,10 +64,10 @@ The SPA and API share one origin. That is load-bearing rather than cosmetic: it 
 refresh token to be a `SameSite=Strict` cookie, and why the frontend calls relative `/api/v1` paths
 with no base-URL environment variable.
 
-Requirements, container and module views, and the non-functional targets are in
-[`docs/HLD.md`](docs/HLD.md). Class design, DDL, algorithms, the settlement state machine and the
-API contract are in [`docs/LLD.md`](docs/LLD.md). For the path a request actually takes end to end,
-see [`docs/flow.md`](docs/flow.md).
+Balances are derived two independent ways: **net** balances come from the ledger postings and are
+the authorisation model, while **pairwise** figures are derived from the source tables and drive
+what the UI shows. A nightly job recomputes both and exports a drift metric, so a disagreement
+between them is an alert rather than a surprise.
 
 ---
 
@@ -97,9 +97,8 @@ see [`docs/flow.md`](docs/flow.md).
 | `git`, `gh` | `gh` is used for repository and board automation |
 
 No system Maven is needed — the project uses the Maven Wrapper. **No Docker and no local database
-are required for development**: the application runs directly against managed Postgres, and
-container-based integration tests run in CI. See
-[`docs/adr/012-no-local-database-or-docker.md`](docs/adr/012-no-local-database-or-docker.md).
+are required for development**: the application runs against a managed PostgreSQL instance, and the
+container-based integration suite runs in CI, which is where a Docker daemon exists.
 
 ### Configuration
 
@@ -163,24 +162,30 @@ splitledger/
 │       └── common/     money, errors, idempotency, security, web
 ├── frontend/           React + Vite + TypeScript
 ├── infra/              Compose files, Caddy, Prometheus, k6
-├── scripts/            Environment checks, repository bootstrap, operational scripts
-└── docs/               Design, decisions and process
+└── scripts/            Environment checks, repository bootstrap, operational scripts
 ```
 
 ---
 
 ## Design decisions
 
-Architectural choices are recorded as ADRs in [`docs/adr/`](docs/adr/README.md) — each with the
-context, the alternatives considered, and the consequences accepted. The ones that shape the system
-most: settlements validate against **net** balances rather than pairwise debt so that debt
-simplification is payable at all; the access token lives in memory while the refresh token is an
-`httpOnly` cookie; and the deployed runtime drops the broker and cache in favour of in-process
-implementations behind the same interfaces.
+Architectural choices are recorded as ADRs, each with the context, the alternatives considered and
+the consequences accepted. The four that shape the system most:
 
-Smaller day-to-day decisions — the ones that do not warrant an ADR but still cost thought — are
-logged chronologically in [`docs/decision.md`](docs/decision.md), each with the trade-off that was
-knowingly accepted.
+- **A modular monolith, not microservices.** Splitting expenses, the ledger and settlements across
+  services would turn one atomic transaction into a saga with compensating actions — a harder
+  correctness problem than the one being solved. The boundaries still exist and are enforced by
+  ArchUnit tests, so they are verifiable rather than aspirational.
+- **Settlements are validated against net balances, not pairwise debt.** Debt simplification
+  deliberately produces transfers between people with no direct debt — A owes B, B owes C, so A
+  pays C. Validating pairwise would reject every suggestion the application makes.
+- **The access token lives in memory; the refresh token is an `httpOnly`, `SameSite=Strict`
+  cookie** scoped to the refresh path and rotated on every use. Presenting a used token revokes the
+  whole chain, since reuse means the value leaked.
+- **The deployed runtime drops the broker and the distributed cache** in favour of in-process
+  implementations behind the same interfaces. The guarantees live in the outbox table and a
+  consumer-side de-duplication table, not in the broker, so this costs nothing observable at this
+  scale — and switching back is configuration, not redesign.
 
 ---
 
@@ -192,9 +197,8 @@ build, lint, type checks, unit and integration tests, and a blocking secret scan
 migrations are forward-only and backward-compatible, so rolling back the application never meets a
 schema it cannot read.
 
-Process, the Definition of Ready and the Definition of Done are in [`docs/AGILE.md`](docs/AGILE.md).
-Delivery, container and deployment detail is in
-[`docs/CICD_DOCKER_CLOUD.md`](docs/CICD_DOCKER_CLOUD.md).
+A change is not done until CI is green, the acceptance criteria are demonstrated, and any
+money-affecting code carries a test that would fail if its invariant broke.
 
 ---
 
