@@ -180,6 +180,30 @@ agreements say one story per commit.
 **Trade-off:** rewrote three unpushed commits. Free now; would have been a `git revert` and an
 apology after pushing.
 
+### D-19 · Library versions are checked against the registry; action versions were not, and it broke CI
+*Why it happened:* Maven and npm versions were verified against Maven Central and the npm registry
+before use (D-06's lesson). GitHub Action versions were taken from the CI/CD document on faith, and
+`aquasecurity/trivy-action@0.28.0` **does not exist** — so the first real CI run failed with
+"Unable to resolve action". Every open Dependabot pull request inherited the failure from the base
+workflow, which made six unrelated bumps look broken.
+**Fixed:** pinned to `v0.36.0`, the version Dependabot's own green PR identified.
+**Trade-off / lesson:** the same verification discipline now applies to *every* external reference,
+not just package registries. Also noted: every action pinned in SL-007 was already behind
+(`checkout` v4 vs v7, `setup-node` v4 vs v7, `setup-java` v4 is deprecated), so Dependabot is left
+to raise those one at a time with CI proving each — rather than bumping them in a batch here, which
+would confound the verification.
+
+### D-20 · `V1__init.sql` is verified, which lowers the priority of a local database
+*Why:* the first CI run executed the Testcontainers integration test against **real PostgreSQL
+16.15**, and Flyway reported "Successfully applied 1 migration to schema public, now at version v1".
+All 15 tables, 10 indexes, 15 CHECK constraints, the partial unique indexes and the `lower(email)`
+functional index are therefore valid against the real engine.
+**Consequence:** provisioning managed Postgres drops from *blocking* to *convenience*. Sprint 1 can
+proceed with unit tests locally and integration tests in CI; a local database is needed only to run
+the application by hand.
+**Trade-off:** the development loop stays slower than it would be with a local database, which is
+the cost ADR-012 already accepted.
+
 ---
 
 ## Open decisions

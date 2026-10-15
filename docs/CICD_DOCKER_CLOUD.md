@@ -125,7 +125,7 @@ jobs:
       # cannot fix is a pipeline you stop reading. Review the output each sprint, curate
       # .trivyignore with a reason and an expiry per entry, then flip exit-code to '1'.
       - name: Trivy vulnerability scan (report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln
