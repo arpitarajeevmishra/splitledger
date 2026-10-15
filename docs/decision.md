@@ -162,11 +162,17 @@ that is red for reasons you cannot act on is a pipeline you stop reading.
 **Trade-off:** real vulnerabilities can land on `main` without blocking. Promoted to blocking once
 the baseline is clean, with a curated `.trivyignore`.
 
-### D-17 · Git identity set per repository, with the name inferred
+### D-17 · Git identity set per repository; the inferred name was wrong and was corrected
 *Why:* no global git identity existed, so there was nothing to conflict with; a scoped
 `includeIf` keeps work and personal separate as the machine accumulates both.
-**Trade-off / open:** the commit name was inferred from the email address and has **not been
-confirmed**. Two commits to amend now, a history rewrite later.
+**What happened:** the author name was first inferred from the account email address and was
+**wrong**. Corrected on 2026-10-15 to `Abhishek <arpitarajeevmishra@gmail.com>`, rewriting the
+author *and* committer on all nine commits with `git filter-branch --env-filter`, plus the LICENSE
+holder.
+**Trade-off:** a full history rewrite. Free here because nothing had been pushed — which is
+precisely why it was done before creating the remote rather than after. Had the repository already
+existed on GitHub this would have needed a force-push and would have broken any clone.
+**Lesson:** a name is not derivable from an email address. Ask.
 
 ### D-18 · A commit that mixed two stories was split rather than left
 *Why:* a `git add -A` swept the CI files into the SL-006 commit. The project's own working
@@ -180,8 +186,9 @@ apology after pushing.
 
 | # | Question | Blocked on |
 |---|---|---|
-| O-1 | Confirm the commit author name and LICENSE holder | You (D-17) |
+| ~~O-1~~ | ~~Confirm the commit author name and LICENSE holder~~ | **Resolved 2026-10-15** — `Abhishek <arpitarajeevmishra@gmail.com>`, applied to all commits and the LICENSE (D-17) |
 | O-2 | Which managed Postgres, and is its free-tier backup retention acceptable | Provisioning an account |
 | O-3 | Whether to move to an LTS JDK at the next release | Revisit after Java 29 (D-04) |
 | O-4 | Whether oxlint's React Hooks coverage is sufficient | Experience during S1–S4 (D-02) |
 | O-5 | Promote the Trivy vulnerability scan to blocking | A clean baseline (D-16) |
+| O-6 | Whether `~/Documents` iCloud sync should be left on, given the project lives there | You — see `ACCOUNTS_AND_ACCESS.md` §3.5 |

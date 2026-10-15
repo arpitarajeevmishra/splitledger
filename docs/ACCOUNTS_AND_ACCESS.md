@@ -15,7 +15,7 @@ Checked before advising, so none of this is guesswork:
 
 | | State |
 |---|---|
-| Global git `user.name` / `user.email` | **Not set at all** (repo-local identity is set instead) |
+| Global git `user.name` / `user.email` | Repo-local identity set 2026-10-15: `Abhishek <arpitarajeevmishra@gmail.com>` |
 | Git credential helpers, `includeIf` rules | None |
 | SSH keys | **None** (no `~/.ssh/config`, no keypairs) |
 | `gh` CLI | Installed 2026-10-15 at `/opt/homebrew/bin/gh` (v2.102.0), via Homebrew. Not on a non-interactive shell's `PATH`, so scripts should use the full path or `eval "$(brew shellenv)"` |
@@ -60,8 +60,8 @@ and this in `~/.gitconfig-personal`:
 
 ```gitconfig
 [user]
-    name = Divyesh Kharade
-    email = divyeshkharade@gmail.com
+    name = Abhishek
+    email = arpitarajeevmishra@gmail.com
 ```
 
 The trailing slash on the `gitdir:` pattern matters — it makes the rule apply to everything beneath
@@ -87,7 +87,7 @@ named and placed yourself.
 Manually:
 
 ```bash
-ssh-keygen -t ed25519 -C "splitledger-personal" -f ~/.ssh/id_ed25519_personal
+ssh-keygen -t ed25519 -C "splitledger-personal" -f ~/.ssh/keys/splitledger_ed25519
 ```
 
 Add the public key to the personal GitHub account (Settings → SSH and GPG keys), then create
@@ -129,6 +129,28 @@ gh auth login          # choose SSH, and the key above
 
 Remember its account selection is global. For git operations the SSH alias governs; `gh` matters
 for issues, the board and setting repository secrets.
+
+### 3.5 Where the private key lives — and why not next to the project
+
+The request was to keep the key in the personal folder we work in. That folder is
+`~/Documents/personal/`, and two things rule it out:
+
+- **`~/Documents` appears to be iCloud-synced on this Mac.** `~/Library/Mobile
+  Documents/com~apple~CloudDocs/Documents` exists, which is what Desktop & Documents sync creates.
+  A private key there is uploaded to iCloud and pushed to every device on the same Apple ID. Worth
+  confirming in System Settings → Apple Account → iCloud → iCloud Drive, but the evidence points
+  that way.
+- **One level down is a git repository that is destined to be public.** A key inside or beside it
+  is one mistaken `git add -f`, one `.gitignore` edit, or one "add everything" away from being
+  published. Publishing a private key is not a recoverable mistake; it is a new key and a revocation.
+
+So the key lives at `~/.ssh/keys/splitledger_ed25519`: outside iCloud, outside any repository, with
+`700` on the directory and `600` on the key. `~/.ssh/config` points at it explicitly, so it behaves
+exactly as a key in a custom folder would.
+
+As defence in depth, the repository `.gitignore` also refuses key material outright (`*.pem`,
+`*.key`, `id_ed25519*`, `*_ed25519`, `.ssh/` and friends) — so even a key placed in the project by
+accident cannot be committed without an explicit override.
 
 ### 3.4 Commit signing
 
