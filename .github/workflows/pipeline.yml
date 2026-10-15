@@ -1,0 +1,171 @@
+name: pipeline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The backend, e2e and image-publishing jobs are defined in full below but only
+  # run once the files they need exist (SL-005 adds backend/pom.xml, SL-801 adds
+  # infra/docker-compose.yml). A job-level `if: hashFiles(...)` cannot work here —
+  # nothing is checked out at job level — so detection happens in its own job.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.probe.outputs.backend }}
+      compose: ${{ steps.probe.outputs.compose }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: probe
+        run: |
+          test -f backend/pom.xml            && echo "backend=true"  >> "$GITHUB_OUTPUT" || echo "backend=false" >> "$GITHUB_OUTPUT"
+          test -f infra/docker-compose.yml   && echo "compose=true"  >> "$GITHUB_OUTPUT" || echo "compose=false" >> "$GITHUB_OUTPUT"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  backend:
+    needs: detect
+    if: needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # Testcontainers needs a Docker daemon, which the development machine does
+      # not have (ADR-012). This is the only place the integration suite runs.
+      - name: Build, test (unit + Testcontainers integration), enforce coverage
+        run: ./mvnw -B verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: backend/target/site/jacoco
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Secrets block from day one: a committed key is always our bug and always fixable.
+      - name: Trivy secret scan (blocking)
+        uses: aquasecurity/trivy-action@0.28.0 # bump to latest
+        with:
+          scan-type: fs
+          scanners: secret
+          exit-code: '1'
+      # Vulnerabilities report but do not block yet — see CICD_DOCKER_CLOUD.md §3
+      # for why a HIGH/CRITICAL gate on this dependency tree would stall the project.
+      - name: Trivy vulnerability scan (report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          ignore-unfixed: true
+
+  e2e:
+    needs: detect
+    if: github.ref == 'refs/heads/main' && needs.detect.outputs.backend == 'true' && needs.detect.outputs.compose == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start data stores
+        run: docker compose -f infra/docker-compose.yml up -d --wait
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: maven }
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build and run the API in the background
+        working-directory: backend
+        run: ./mvnw -B -q -DskipTests package && (java -jar target/*.jar &) && sleep 40
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/splitledger
+          DB_USER: splitledger
+          DB_PASSWORD: change-me
+          JWT_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+      - name: Run Playwright
+        working-directory: frontend
+        run: npm ci && npx playwright install --with-deps chromium && npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+
+  build-and-push:
+    needs: [detect, backend, frontend, security]
+    if: github.ref == 'refs/heads/main' && needs.detect.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Optional: add the first time you see `toomanyrequests`. Base images come from
+      # Docker Hub, anonymous pulls are rate-limited per IP, and runners share IPs.
+      # A read-only token is enough. See docs/ACCOUNTS_AND_ACCESS.md §4.4.
+      - name: Docker Hub login (raises the base-image pull limit)
+        if: vars.DOCKERHUB_ENABLED == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Publishing goes to GHCR with the automatic GITHUB_TOKEN. No Docker Hub
+      # account is involved in pushing images.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lowercase repository owner
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER }}/splitledger-backend:${{ github.sha }}
+            ghcr.io/${{ env.OWNER }}/splitledger-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER }}/splitledger-web:${{ github.sha }}
+            ghcr.io/${{ env.OWNER }}/splitledger-web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
