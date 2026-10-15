@@ -1,272 +1,203 @@
 # SplitLedger
 
-> A ledger-first expense-splitting and settlement platform (Splitwise-style) with Razorpay test-mode payments.
-> Built as a production-style full-stack project: Java/Spring Boot backend, React frontend, Docker, CI/CD, cloud deployment, Agile delivery.
+[![pipeline](https://github.com/arpitarajeevmishra/splitledger/actions/workflows/pipeline.yml/badge.svg)](https://github.com/arpitarajeevmishra/splitledger/actions/workflows/pipeline.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Java](https://img.shields.io/badge/Java-27-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F)
+![React](https://img.shields.io/badge/React-19-61DAFB)
 
-**Rename freely.** "SplitLedger" is a working title.
+Expense splitting built on an immutable double-entry ledger. Shared expenses are recorded as
+balanced ledger postings in integer paise, so every balance is auditable, every correction is a
+reversal rather than an edit, and arithmetic cannot drift.
 
----
-
-## 1. Why this project exists
-
-Most Splitwise clones are CRUD apps. SplitLedger treats **money correctness** as the product:
-
-- Money is stored as integer **paise** (never floats).
-- Every balance change is an **immutable double-entry ledger posting**; corrections are reversals, never edits.
-- Settlements follow an explicit **state machine** and are **idempotent** (retries and duplicate webhooks never double-count).
-- Payments go through a **PaymentProvider port** with Razorpay (test mode), UPI intent, cash and a sandbox provider as adapters.
-
-> **Scope disclaimer.** SplitLedger is a **publicly reachable demo**, and **no real money moves
-> anywhere in it.**
->
-> Anyone can sign up and use it. Settlement runs through **Razorpay test mode**, cash, or a sandbox
-> provider — real API calls, real signature verification, real idempotency, simulated funds. The
-> expenses, splits, ledger and balances are computed for real; the amounts are whatever people type
-> to try it out.
->
-> `UPI_INTENT` is built and tested but **disabled in the deployed instance**: a `upi://pay` link
-> opens a real UPI app against a real payee, so it is the one method that could move real money
-> against fictional data. Actual user-to-user fund routing would need Razorpay Route/Payouts, business
-> KYC and a regulatory posture that is deliberately out of scope. Full reasoning:
-> [`docs/RUNNING_LIVE.md`](docs/RUNNING_LIVE.md) §2.
+> **No real money moves anywhere in this application.** Settlement runs through Razorpay **test
+> mode**, cash, or a sandbox provider — real API calls, real signature verification, real
+> idempotency, simulated funds. UPI intent links are implemented and tested but disabled in the
+> deployed instance, because they are the one method that could reach a real bank account. Routing
+> funds between users would require Razorpay Route/Payouts, business KYC and a regulatory posture
+> that is deliberately out of scope.
 
 ---
 
-## 2. Features
+## Why
 
-### MVP
-| Area | Feature |
-|---|---|
-| Identity | Register, login, JWT access + refresh rotation, logout |
-| Groups | Create groups, invite by email with explicit accept, add/remove members, role-based access |
-| Expenses | Equal / exact / percentage / shares splits, correct paise rounding, edit (replace) and void |
-| Balances | Net balance per member, pairwise debts, simplified "who pays whom" |
-| Settlements | Razorpay test-mode checkout, cash, sandbox provider; UPI intent link built but disabled in the deployed instance |
-| Reliability | Idempotency keys, webhook signature verification and de-duplication, concurrency-safe writes |
-| Events | Transactional outbox, Kafka-compatible broker, notification consumer |
-| Ops | Redis caching + rate limiting, metrics, structured logs, load-test report |
-| Delivery | Dockerised, GitHub Actions CI/CD, deployed to AWS with HTTPS |
+Most expense splitters are CRUD applications with a balance column. SplitLedger treats **money
+correctness as the product**:
 
-### Stretch
-Natural-language expense entry (AI draft, human confirms), UPI QR codes, recurring expenses, receipt uploads, Google OAuth login, Terraform + ECS Fargate, PWA.
+- **Integer paise end to end.** `BIGINT` in PostgreSQL, `long` in Java, integers over the wire,
+  string-based parsing in the browser. No floating point touches money at any layer.
+- **Immutable ledger.** Postings are append-only and every transaction sums to exactly zero. Voiding
+  an expense inserts a reversal; editing is void-plus-replace. History is never rewritten, so any
+  balance can be explained.
+- **Exact splits.** Equal, exact, percentage and share splits all resolve through largest-remainder
+  allocation with a deterministic tie-break, so allocations sum to the total to the paisa.
+- **Idempotent money endpoints.** Client retries, duplicate webhooks and late gateway events cannot
+  double-count. Idempotency records live in PostgreSQL, not the cache, because losing one would
+  permit a double charge.
+- **Deliberate concurrency.** A per-group row lock serialises balance-affecting writes within a
+  group while unrelated groups proceed in parallel; expense edits use optimistic versioning.
+- **Reconciliation.** A nightly job derives balances two independent ways and exports a drift
+  metric that must always be zero.
 
 ---
 
-## 3. Architecture at a glance
+## Architecture
+
+A modular monolith with one additional runtime role. Module boundaries are enforced by ArchUnit
+tests rather than convention — no cycles, controllers never reach repositories, and the ledger
+knows nothing about expenses or settlements.
 
 ```mermaid
 flowchart LR
-  U["User (Browser)"] -->|HTTPS| C["Caddy reverse proxy"]
-  C --> W["React SPA (nginx)"]
-  C -->|"/api"| API["Spring Boot API (modular monolith)"]
-  API --> PG[("PostgreSQL")]
-  API --> R[("Redis")]
-  API --> K[["Kafka-compatible broker"]]
-  API -->|"create order"| RZP["Razorpay (test mode)"]
-  RZP -->|"webhooks"| API
-  K --> N["Notification consumer"]
-  N --> M["SMTP / Mailhog"]
+  U["Browser"] -->|HTTPS| C["Caddy — TLS, single origin"]
+  C -->|"/"| W["React SPA"]
+  C -->|"/api/v1/*"| API["Spring Boot API"]
+  C -->|"/webhooks/*"| API
+  RZP["Razorpay (test mode)"] -->|webhook| C
+  API --> PG[("PostgreSQL — system of record")]
+  API --> CACHE[("Balance cache")]
+  API --> BUS["Transactional outbox → event bus"]
+  BUS --> N["Notification consumer"]
 ```
 
-Details: [`docs/HLD.md`](docs/HLD.md) and [`docs/LLD.md`](docs/LLD.md).
+The SPA and API share one origin. That is load-bearing rather than cosmetic: it is what allows the
+refresh token to be a `SameSite=Strict` cookie, and why the frontend calls relative `/api/v1` paths
+with no base-URL environment variable.
+
+Requirements, container and module views, and the non-functional targets are in
+[`docs/HLD.md`](docs/HLD.md). Class design, DDL, algorithms, the settlement state machine and the
+API contract are in [`docs/LLD.md`](docs/LLD.md). For the path a request actually takes end to end,
+see [`docs/flow.md`](docs/flow.md).
 
 ---
 
-## 4. Tech stack
+## Tech stack
 
 | Layer | Choice |
 |---|---|
-| Backend | Java 27, Spring Boot 4.1, Spring Security 7, Spring Data JPA/Hibernate, Flyway (ADR-016) |
-| Data | PostgreSQL 16, Redis 7 |
-| Messaging | Kafka API (Redpanda locally/VM), transactional outbox |
-| Frontend | React 19, TypeScript (strict), Vite, TanStack Query, React Router, Tailwind CSS v4, React Hook Form + Zod, oxlint + Prettier |
+| Backend | Java 27, Spring Boot 4.1, Spring Security 7, Spring Data JPA, Flyway |
+| Data | PostgreSQL 16, Redis (optional; in-process cache by default) |
+| Messaging | Transactional outbox behind a publisher interface — in-process bus deployed, Kafka adapter tested in CI |
+| Frontend | React 19, TypeScript (strict), Vite, TanStack Query, React Router, Tailwind CSS v4, React Hook Form + Zod |
 | Payments | Razorpay Java SDK + Checkout.js (test mode), UPI intent deep links |
-| Testing | JUnit 5, Mockito, jqwik (property-based), ArchUnit, Testcontainers (**CI only**), `EmbeddedKafkaBroker` + GreenMail (in-JVM), Vitest, React Testing Library, Playwright, k6 |
-| DevOps | Docker + Compose (**CI and the VM only, never local**), GitHub Actions, GHCR, AWS EC2 + Caddy (Terraform/ECS as stretch) |
-| Observability | Spring Actuator, Micrometer, Prometheus, Grafana, JSON logs with correlation IDs |
+| Testing | JUnit 5, jqwik (property-based), ArchUnit, Testcontainers, Vitest, React Testing Library, Playwright, k6 |
+| Delivery | GitHub Actions, GHCR, Docker, Caddy |
+| Observability | Actuator, Micrometer, Prometheus, structured JSON logs with correlation ids |
 
 ---
 
-## 5. Repository layout
-
-```
-splitledger/
-├── backend/                  # Spring Boot app (Maven)
-│   └── src/main/java/com/splitledger/
-│       ├── identity/  group/  expense/  ledger/
-│       ├── settlement/  payment/  notification/
-│       └── common/
-├── frontend/                 # React + Vite + TypeScript
-├── infra/
-│   ├── docker-compose.yml        # local dev stack
-│   ├── docker-compose.prod.yml   # VM deployment
-│   ├── caddy/Caddyfile
-│   ├── prometheus/prometheus.yml
-│   └── k6/                       # load tests
-├── scripts/                  # smoke test, rollback, simulate-webhook
-├── docs/                     # HLD, LLD, CI/CD, Agile, Roadmap, review, sprint plan, ADRs
-└── .github/
-    ├── workflows/pipeline.yml
-    ├── ISSUE_TEMPLATE/
-    └── pull_request_template.md
-```
-
----
-
-## 6. Quick start (local)
-
-> **No Docker and no local database are used for development** (ADR-012). The JVM and Vite run
-> directly on your machine; Postgres, Redis and SMTP are managed free-tier services. Docker
-> appears only in CI (Testcontainers, image builds) and on the deployment VM.
+## Getting started
 
 ### Prerequisites
 
-| | Tool | Why |
-|---|---|---|
-| **Required** | **JDK 27** | Blocks the whole backend. Nothing else is missing. Oracle JDK 27 is what is installed here; any JDK 27 works (ADR-016) |
-| Already present on a typical Mac | `git`, `curl`, `tar`, `shasum` | — |
-| Required | **Node** as pinned in `.nvmrc` (24) | Frontend |
-| Recommended | `gh` | Project board, labels, milestones (SL-008) and setting repository secrets |
-| Optional | `psql` | Convenience only — managed Postgres providers have a web SQL console |
+| Tool | Notes |
+|---|---|
+| **JDK 27** | Required. Any distribution |
+| **Node** | Version pinned in `.nvmrc` |
+| `git`, `gh` | `gh` is used for repository and board automation |
 
-**What you do _not_ need, and why:**
+No system Maven is needed — the project uses the Maven Wrapper. **No Docker and no local database
+are required for development**: the application runs directly against managed Postgres, and
+container-based integration tests run in CI. See
+[`docs/adr/012-no-local-database-or-docker.md`](docs/adr/012-no-local-database-or-docker.md).
 
-- **Maven** — the project uses the Maven Wrapper (`./mvnw`), which needs only a JDK.
-- **Docker** — images are built on CI runners and run on the deploy host, never locally (ADR-012).
-- **PostgreSQL, Redis, Kafka, Mailhog** — all managed services. Nothing runs on your machine.
-- **ngrok / cloudflared** — no longer needed. Deployment moved to Sprint 6, *before* the gateway
-  sprint, so the Razorpay webhook gets a stable public HTTPS URL instead of a tunnel.
-- **Playwright browsers** — installed by `npx playwright install` in CI, not a system install.
-
-One-time setup:
-1. Create a free managed **Postgres 16** (Neon), **Redis** (Upstash) and **SMTP sandbox** (Mailtrap).
-2. `cp .env.example .env`, then fill in the connection strings and your Razorpay **test** keys.
-3. Run `./scripts/check-env.sh` to prove DB, Redis and SMTP are reachable before you start.
+### Configuration
 
 ```bash
-git clone https://github.com/<you>/splitledger.git
+git clone https://github.com/arpitarajeevmishra/splitledger.git
 cd splitledger
-cp .env.example .env
-./scripts/check-env.sh
-
-# backend (Flyway migrates the managed dev database on startup)
-cd backend && ./mvnw spring-boot:run
-
-# frontend (new terminal)
-cd frontend && nvm use && npm ci && npm run dev
+cp .env.example .env     # fill in a PostgreSQL URL and a JWT secret
+./scripts/check-env.sh   # verifies required variables and store reachability
 ```
 
-| Service | Where |
+`.env.example` documents every variable. Secrets never enter the repository; `.gitignore` excludes
+`.env` and all key material.
+
+### Running
+
+```bash
+cd backend && ./mvnw spring-boot:run
+```
+
+```bash
+cd frontend && npm ci && npm run dev
+```
+
+| Service | URL |
 |---|---|
 | Frontend | http://localhost:5173 |
 | API | http://localhost:8080/api/v1 |
-| Swagger UI | http://localhost:8080/swagger-ui.html (dev only; disabled in `prod`) |
-| Database / cache | your Neon / Upstash dashboards |
-| Captured dev email | your Mailtrap inbox |
-| Metrics dashboard | Grafana Cloud (free tier) |
+| API docs | http://localhost:8080/swagger-ui.html (disabled in the `prod` profile) |
+
+### Testing
 
 ```bash
-cd backend && ./mvnw test                 # unit + jqwik property tests, fully offline
-cd backend && ./mvnw verify -PcloudIT     # integration suite against the managed dev database
+cd backend && ./mvnw test
 ```
-The Testcontainers suite runs **in CI only**, where a Docker daemon exists. A story is Done when
-**CI** is green; a passing local run is necessary but not sufficient.
 
-### Environment variables (`.env.example`)
+Unit and property-based tests; fully offline, no Docker required.
+
+```bash
+cd backend && ./mvnw verify
 ```
-# --- database (managed dev instance -- never point this at production) ---
-DB_URL=jdbc:postgresql://<host>/<db>?sslmode=require
-DB_USER=splitledger
-DB_PASSWORD=
-# --- cache ---
-REDIS_URL=rediss://default:<token>@<host>:6379
-# --- broker (Phase 5; blank selects the in-process LocalEventBus) ---
-KAFKA_BOOTSTRAP=
-KAFKA_SECURITY_PROTOCOL=SASL_SSL
-KAFKA_SASL_JAAS_CONFIG=
-# --- mail ---
-SMTP_HOST=sandbox.smtp.mailtrap.io
-SMTP_PORT=2525
-SMTP_USER=
-SMTP_PASSWORD=
-MAIL_FROM=no-reply@splitledger.local
-# --- auth ---
-JWT_SECRET=change-me-to-a-long-random-string
-# --- payments (TEST MODE ONLY) ---
-RAZORPAY_KEY_ID=rzp_test_xxxxx
-RAZORPAY_KEY_SECRET=
-RAZORPAY_WEBHOOK_SECRET=
-# --- app ---
-APP_BASE_URL=http://localhost:5173
-CORS_ALLOWED_ORIGINS=http://localhost:5173
-SANDBOX_AUTOCONFIRM_DELAY=PT5S
+
+Adds the Testcontainers integration suite, which requires a Docker daemon and therefore runs in CI.
+
+```bash
+cd frontend && npm run typecheck && npm run lint && npm run test
 ```
-On the deployment VM the same file additionally carries `POSTGRES_PASSWORD` (initialises the
-Postgres container; set it equal to `DB_PASSWORD`) and `OWNER` (your lowercase GHCR owner, used
-by `docker-compose.prod.yml`).
 
-Never commit real secrets. Test keys only.
+A change is complete when **CI** is green — a passing local run is necessary but not sufficient,
+since the integration suite does not run locally.
 
 ---
 
-## 7. Documentation index
+## Project structure
 
-| Doc | Contents |
-|---|---|
-| [`docs/HLD.md`](docs/HLD.md) | Requirements, context, containers, flows, tech choices, NFRs, ADRs |
-| [`docs/LLD.md`](docs/LLD.md) | Class design, ER + DDL, algorithms, state machine, APIs, idempotency, concurrency, frontend design |
-| [`docs/CICD_DOCKER_CLOUD.md`](docs/CICD_DOCKER_CLOUD.md) | Branching, pipelines (YAML), Dockerfiles, Compose, AWS deployment, testing and quality gates |
-| [`docs/AGILE.md`](docs/AGILE.md) | Solo-Scrum process, board, Definition of Ready/Done, templates |
-| [`docs/SPRINT_PLAN.md`](docs/SPRINT_PLAN.md) | **The active plan:** 10 sprints at 13 points, with exit criteria and both cut lines |
-| [`docs/adr/`](docs/adr/README.md) | All 16 architecture decision records, with context, alternatives and consequences |
-| [`docs/decision.md`](docs/decision.md) | **Running decision log** — every call made during development with the trade-off accepted, including the small ones that do not warrant an ADR |
-| [`docs/flow.md`](docs/flow.md) | **End-to-end flows** — how a request becomes a balance change, with per-flow build status |
-| [`docs/ACCOUNTS_AND_ACCESS.md`](docs/ACCOUNTS_AND_ACCESS.md) | Using a personal GitHub account alongside work on one machine, why GHCR means no Docker Hub account is needed, and where each credential belongs |
-| [`docs/RUNNING_LIVE.md`](docs/RUNNING_LIVE.md) | Keeping the public demo live as one person: what "demo" means precisely, why UPI intent is the risky method, demo framing, the guest tour, hosting and real cost, alert policy |
-| [`docs/REVIEW_FINDINGS.md`](docs/REVIEW_FINDINGS.md) | Design review: blockers, corrections, expense-splitter do's and don'ts, the no-local-Docker setup |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Superseded by `SPRINT_PLAN.md`; kept for the story catalogue and interview story bank |
+```
+splitledger/
+├── backend/            Spring Boot application (Maven)
+│   └── src/main/java/com/splitledger/
+│       ├── identity/  group/  expense/  ledger/
+│       ├── settlement/  payment/  notification/  outbox/
+│       └── common/     money, errors, idempotency, security, web
+├── frontend/           React + Vite + TypeScript
+├── infra/              Compose files, Caddy, Prometheus, k6
+├── scripts/            Environment checks, repository bootstrap, operational scripts
+└── docs/               Design, decisions and process
+```
 
 ---
 
-## 8. Project status
+## Design decisions
 
-Plan of record: [`docs/SPRINT_PLAN.md`](docs/SPRINT_PLAN.md).
-Portfolio cut line = S0 to S7. Public-demo cut line = that plus S9. S8 is the compressible one.
-Deployment is S6, deliberately *before* the gateway sprint: a stable public HTTPS URL replaces the
-webhook tunnel. The app goes live with registration switched off and opens to the public in S9.
+Architectural choices are recorded as ADRs in [`docs/adr/`](docs/adr/README.md) — each with the
+context, the alternatives considered, and the consequences accepted. The ones that shape the system
+most: settlements validate against **net** balances rather than pairwise debt so that debt
+simplification is payable at all; the access token lives in memory while the refresh token is an
+`httpOnly` cookie; and the deployed runtime drops the broker and cache in favour of in-process
+implementations behind the same interfaces.
 
-| Sprint | Goal | Status |
-|---|---|---|
-| S0 | Foundations & decisions | 🟨 in progress — SL-001/002/003/004/006/007 done; SL-005 blocked on a JDK, SL-008 on `gh` |
-| S1 | Identity | ⬜ |
-| S2 | Groups, membership & invites | ⬜ |
-| S3 | Money core (splits + ledger) | ⬜ |
-| S4 | Balances, corrections & activity | ⬜ |
-| S5 | Settlements (no gateway) | ⬜ |
-| S6 | Deploy it, door shut | ⬜ |
-| S7 | Razorpay test mode | ⬜ |
-| S8 | Events, cache & performance | ⬜ |
-| S9 | Open it to the public | ⬜ |
+Smaller day-to-day decisions — the ones that do not warrant an ADR but still cost thought — are
+logged chronologically in [`docs/decision.md`](docs/decision.md), each with the trade-off that was
+knowingly accepted.
 
 ---
 
-## 9. Results (fill in only with measured numbers)
+## Development workflow
 
-| Metric | Value | How measured |
-|---|---|---|
-| Load test throughput | `<X> req/s` | k6 script `infra/k6/...` |
-| p95 latency (balances, cached vs uncached) | `<X> ms → <Y> ms` | k6, Grafana screenshot |
-| Concurrent settlement test | `<N> threads, 0 balance drift` | integration test |
-| Test coverage (domain + application) | `<X>%` | JaCoCo in CI |
-| Live demo | `<url>` | |
+Trunk-based development: `main` is always deployable, changes arrive as short-lived branches and
+squash-merged pull requests, and commits follow Conventional Commits. Every pull request must pass
+build, lint, type checks, unit and integration tests, and a blocking secret scan. Database
+migrations are forward-only and backward-compatible, so rolling back the application never meets a
+schema it cannot read.
 
-### Resume bullets (template — replace the placeholders with real results)
-- Built SplitLedger, a full-stack expense-settlement platform (Java 27, Spring Boot 4, PostgreSQL, Redis, Kafka, React), modelling balances as an immutable double-entry ledger in integer paise.
-- Implemented idempotent settlement APIs and Razorpay (test-mode) webhook processing with signature verification and de-duplication; verified `<0>` balance drift across `<N>` concurrent transactions.
-- Reduced p95 balance-API latency from `<X>` ms to `<Y>` ms with Redis caching, measured with k6 at `<N>` req/s.
-- Shipped via GitHub Actions CI/CD to AWS using Docker, with `<X>%` automated test coverage and automatic rollback on failed smoke tests.
+Process, the Definition of Ready and the Definition of Done are in [`docs/AGILE.md`](docs/AGILE.md).
+Delivery, container and deployment detail is in
+[`docs/CICD_DOCKER_CLOUD.md`](docs/CICD_DOCKER_CLOUD.md).
 
 ---
 
-## 10. License
-MIT (or your choice).
+## License
+
+[MIT](LICENSE)

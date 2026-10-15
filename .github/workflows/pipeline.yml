@@ -23,12 +23,20 @@ jobs:
     outputs:
       backend: ${{ steps.probe.outputs.backend }}
       compose: ${{ steps.probe.outputs.compose }}
+      dockerfiles: ${{ steps.probe.outputs.dockerfiles }}
     steps:
       - uses: actions/checkout@v4
       - id: probe
         run: |
           test -f backend/pom.xml            && echo "backend=true"  >> "$GITHUB_OUTPUT" || echo "backend=false" >> "$GITHUB_OUTPUT"
           test -f infra/docker-compose.yml   && echo "compose=true"  >> "$GITHUB_OUTPUT" || echo "compose=false" >> "$GITHUB_OUTPUT"
+          # build-and-push needs the Dockerfiles, not the pom: gating on the pom alone
+          # let the job run and fail with "open Dockerfile: no such file or directory".
+          if [ -f backend/Dockerfile ] && [ -f frontend/Dockerfile ]; then
+            echo "dockerfiles=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerfiles=false" >> "$GITHUB_OUTPUT"
+          fi
 
   frontend:
     runs-on: ubuntu-latest
@@ -130,7 +138,7 @@ jobs:
 
   build-and-push:
     needs: [detect, backend, frontend, security]
-    if: github.ref == 'refs/heads/main' && needs.detect.outputs.backend == 'true'
+    if: github.ref == 'refs/heads/main' && needs.detect.outputs.dockerfiles == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
