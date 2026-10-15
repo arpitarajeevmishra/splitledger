@@ -13,7 +13,7 @@ import org.testcontainers.utility.DockerImageName;
  * and fails on an unrelated morning, which is the least useful kind of failure.
  */
 @TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfiguration {
+public class TestcontainersConfiguration {
 
     @Bean
     @ServiceConnection

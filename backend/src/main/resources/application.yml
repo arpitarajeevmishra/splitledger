@@ -60,6 +60,8 @@ app:
     access-ttl: PT15M
   auth:
     refresh-ttl: P7D
+    # Off locally so the cookie works over plain HTTP; forced on in prod below.
+    cookie-secure: ${COOKIE_SECURE:false}
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
   registration-enabled: ${REGISTRATION_ENABLED:false}
   payments:
@@ -83,3 +85,6 @@ management:
   endpoint:
     health:
       show-details: never
+app:
+  auth:
+    cookie-secure: true
