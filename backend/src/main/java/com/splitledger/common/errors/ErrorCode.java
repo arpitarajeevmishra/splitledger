@@ -10,6 +10,10 @@ public enum ErrorCode {
 
     VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "Request failed validation"),
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Missing, invalid or expired token"),
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "Email or password is incorrect"),
+    REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "Refresh token is unknown, expired or already used"),
+    EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "That email is already registered"),
+    REGISTRATION_DISABLED(HttpStatus.FORBIDDEN, "Registration is currently closed"),
     FORBIDDEN(HttpStatus.FORBIDDEN, "Not allowed"),
     NOT_GROUP_MEMBER(HttpStatus.FORBIDDEN, "Not a member of this group"),
     NOT_FOUND(HttpStatus.NOT_FOUND, "Resource not found"),

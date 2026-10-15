@@ -53,6 +53,13 @@ springdoc:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  jwt:
+    secret: ${JWT_SECRET}
+    # Short on purpose: there is no revocation list, so this is the window in which a
+    # stolen access token stays usable (ADR-011).
+    access-ttl: PT15M
+  auth:
+    refresh-ttl: P7D
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
   registration-enabled: ${REGISTRATION_ENABLED:false}
   payments:
