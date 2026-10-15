@@ -76,7 +76,7 @@ Details: [`docs/HLD.md`](docs/HLD.md) and [`docs/LLD.md`](docs/LLD.md).
 
 | Layer | Choice |
 |---|---|
-| Backend | Java 21, Spring Boot 3.x, Spring Security, Spring Data JPA/Hibernate, Flyway |
+| Backend | Java 27, Spring Boot 4.1, Spring Security 7, Spring Data JPA/Hibernate, Flyway (ADR-016) |
 | Data | PostgreSQL 16, Redis 7 |
 | Messaging | Kafka API (Redpanda locally/VM), transactional outbox |
 | Frontend | React 19, TypeScript (strict), Vite, TanStack Query, React Router, Tailwind CSS v4, React Hook Form + Zod, oxlint + Prettier |
@@ -123,7 +123,7 @@ splitledger/
 
 | | Tool | Why |
 |---|---|---|
-| **Required** | **JDK 21** (Temurin) | Blocks the whole backend. Nothing else is missing |
+| **Required** | **JDK 27** | Blocks the whole backend. Nothing else is missing. Oracle JDK 27 is what is installed here; any JDK 27 works (ADR-016) |
 | Already present on a typical Mac | `git`, `curl`, `tar`, `shasum` | — |
 | Required | **Node** as pinned in `.nvmrc` (24) | Frontend |
 | Recommended | `gh` | Project board, labels, milestones (SL-008) and setting repository secrets |
@@ -218,7 +218,9 @@ Never commit real secrets. Test keys only.
 | [`docs/CICD_DOCKER_CLOUD.md`](docs/CICD_DOCKER_CLOUD.md) | Branching, pipelines (YAML), Dockerfiles, Compose, AWS deployment, testing and quality gates |
 | [`docs/AGILE.md`](docs/AGILE.md) | Solo-Scrum process, board, Definition of Ready/Done, templates |
 | [`docs/SPRINT_PLAN.md`](docs/SPRINT_PLAN.md) | **The active plan:** 10 sprints at 13 points, with exit criteria and both cut lines |
-| [`docs/adr/`](docs/adr/README.md) | All 15 architecture decision records, with context, alternatives and consequences |
+| [`docs/adr/`](docs/adr/README.md) | All 16 architecture decision records, with context, alternatives and consequences |
+| [`docs/decision.md`](docs/decision.md) | **Running decision log** — every call made during development with the trade-off accepted, including the small ones that do not warrant an ADR |
+| [`docs/flow.md`](docs/flow.md) | **End-to-end flows** — how a request becomes a balance change, with per-flow build status |
 | [`docs/ACCOUNTS_AND_ACCESS.md`](docs/ACCOUNTS_AND_ACCESS.md) | Using a personal GitHub account alongside work on one machine, why GHCR means no Docker Hub account is needed, and where each credential belongs |
 | [`docs/RUNNING_LIVE.md`](docs/RUNNING_LIVE.md) | Keeping the public demo live as one person: what "demo" means precisely, why UPI intent is the risky method, demo framing, the guest tour, hosting and real cost, alert policy |
 | [`docs/REVIEW_FINDINGS.md`](docs/REVIEW_FINDINGS.md) | Design review: blockers, corrections, expense-splitter do's and don'ts, the no-local-Docker setup |
@@ -259,7 +261,7 @@ webhook tunnel. The app goes live with registration switched off and opens to th
 | Live demo | `<url>` | |
 
 ### Resume bullets (template — replace the placeholders with real results)
-- Built SplitLedger, a full-stack expense-settlement platform (Java 21, Spring Boot, PostgreSQL, Redis, Kafka, React), modelling balances as an immutable double-entry ledger in integer paise.
+- Built SplitLedger, a full-stack expense-settlement platform (Java 27, Spring Boot 4, PostgreSQL, Redis, Kafka, React), modelling balances as an immutable double-entry ledger in integer paise.
 - Implemented idempotent settlement APIs and Razorpay (test-mode) webhook processing with signature verification and de-duplication; verified `<0>` balance drift across `<N>` concurrent transactions.
 - Reduced p95 balance-API latency from `<X>` ms to `<Y>` ms with Redis caching, measured with k6 at `<N>` req/s.
 - Shipped via GitHub Actions CI/CD to AWS using Docker, with `<X>%` automated test coverage and automatic rollback on failed smoke tests.

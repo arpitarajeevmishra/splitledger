@@ -60,7 +60,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          # Must match the local baseline (ADR-016) or we get "works on my machine".
+          # If Temurin 27 is unavailable on the runner, switch to distribution: oracle.
+          java-version: '27'
           cache: maven
       # Testcontainers needs a Docker daemon, which the development machine does
       # not have (ADR-012). This is the only place the integration suite runs.
@@ -103,7 +105,7 @@ jobs:
       - name: Start data stores
         run: docker compose -f infra/docker-compose.yml up -d --wait
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '21', cache: maven }
+        with: { distribution: temurin, java-version: '27', cache: maven }
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

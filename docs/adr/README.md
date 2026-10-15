@@ -6,7 +6,11 @@ including you in three months — might otherwise have to reverse-engineer from 
 
 ADR-001 to ADR-009 were taken while writing the HLD and LLD. ADR-010 to ADR-015 came out of the
 design review recorded in [`../REVIEW_FINDINGS.md`](../REVIEW_FINDINGS.md); ADR-010 in particular
-fixed a contradiction that would otherwise have broken the project's headline feature.
+fixed a contradiction that would otherwise have broken the project's headline feature. ADR-016 came
+out of implementation.
+
+Smaller decisions — the ones that do not warrant a record of their own but still cost thought — are
+logged chronologically in [`../decision.md`](../decision.md), each with the trade-off accepted.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -25,6 +29,7 @@ fixed a contradiction that would otherwise have broken the project's headline fe
 | [013](013-public-demo-posture.md) | Ship as a public demo: Razorpay test mode live, UPI intent disabled | Accepted |
 | [014](014-account-deletion-anonymises.md) | Account deletion anonymises the user and retains postings | Accepted |
 | [015](015-in-process-event-bus.md) | Deployed runtime drops the broker and Redis; outbox publishes in-process | Accepted |
+| [016](016-java-27-spring-boot-4.md) | Java 27 and Spring Boot 4.1 as the baseline | Accepted |
 
 ## The three worth reading first
 

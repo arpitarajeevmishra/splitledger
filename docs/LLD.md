@@ -22,7 +22,16 @@ com.splitledger
 ```
 
 ### Main dependencies (`pom.xml`)
-`spring-boot-starter-web`, `-validation`, `-security`, `-data-jpa`, `-data-redis`, `-actuator`, `spring-kafka`, `flyway-core` + `flyway-database-postgresql`, `postgresql`, `springdoc-openapi-starter-webmvc-ui`, `micrometer-registry-prometheus`, `jjwt` (or Nimbus), `bucket4j`, `razorpay-java`, `logstash-logback-encoder`.
+`spring-boot-starter-web`, `-validation`, `-security`, `-data-jpa`, `-data-redis`, `-actuator`,
+`-mail`, `spring-boot-starter-kafka`, `spring-boot-starter-flyway`, `postgresql`,
+`springdoc-openapi-starter-webmvc-ui`, `micrometer-registry-prometheus`, `jjwt` (or Nimbus),
+`bucket4j`, `razorpay-java`, `logstash-logback-encoder`.
+
+> **Updated for the Spring Boot 4.1 baseline (ADR-016).** Boot 4 renamed two of these: it is
+> `spring-boot-starter-kafka` (not `spring-kafka`) and `spring-boot-starter-flyway` (not
+> `flyway-core` plus `flyway-database-postgresql`, which the starter brings in). **springdoc must
+> be the 3.x line** — 2.x targets Boot 3 — and neither springdoc nor ArchUnit is version-managed
+> by the parent, so both are pinned explicitly in the pom.
 Test: `spring-boot-starter-test`, `testcontainers` (postgresql, kafka/redpanda, generic Redis),
 `spring-kafka-test` (in-JVM `EmbeddedKafkaBroker`), `greenmail-junit5` (in-JVM SMTP), `jqwik`,
 `archunit-junit5`, `rest-assured`, `awaitility`. Plugins: JaCoCo, Spotless.

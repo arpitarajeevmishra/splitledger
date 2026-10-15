@@ -82,7 +82,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '27'   # ADR-016
           cache: maven
       - name: Build, test (unit + Testcontainers integration), enforce coverage
         run: mvn -B verify          # JaCoCo rule fails the build under 80% on domain/application
@@ -145,7 +145,7 @@ jobs:
       - name: Start data stores
         run: docker compose -f infra/docker-compose.yml up -d --wait
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '21', cache: maven }
+        with: { distribution: temurin, java-version: '27', cache: maven }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: npm, cache-dependency-path: frontend/package-lock.json }
       - name: Build and run the API in the background
@@ -346,7 +346,7 @@ green, never on a local run alone.
 ### 6.1 Backend `backend/Dockerfile`
 ```dockerfile
 # ---- build stage ----
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-27 AS build
 WORKDIR /app
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
@@ -354,7 +354,7 @@ COPY src ./src
 RUN mvn -B -q -DskipTests package
 
 # ---- runtime stage ----
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:27-jre
 RUN useradd --system --uid 1001 app
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
