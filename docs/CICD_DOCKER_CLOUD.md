@@ -49,6 +49,12 @@ flowchart LR
 
 `.github/workflows/pipeline.yml`
 
+> **The committed file is the source of truth and differs from the listing below in one way:** it
+> adds a small `detect` job that probes for `backend/pom.xml` and `infra/docker-compose.yml`, and
+> gates the backend, e2e and publishing jobs on its output. That keeps the pipeline complete *and*
+> green while those files do not yet exist. A job-level `if: hashFiles(...)` cannot do the same —
+> nothing is checked out at job level, so the expression always evaluates empty.
+
 ```yaml
 name: pipeline
 
@@ -287,7 +293,7 @@ repository. Account and identity setup is in [`ACCOUNTS_AND_ACCESS.md`](ACCOUNTS
 | Coverage ≥ 80% on `domain` and `application` | JaCoCo rule | Yes |
 | Architecture rules | ArchUnit | Yes |
 | Formatting | Spotless / Prettier | Yes |
-| Frontend lint, types, unit tests, build | ESLint, `tsc`, Vitest | Yes |
+| Frontend lint, types, unit tests, build | oxlint, `tsc -b`, Vitest | Yes |
 | Secret scan | Trivy (`scanners: secret`) | **Yes** |
 | Dependency vulnerabilities | Trivy (HIGH/CRITICAL) | Reports only until the baseline is clean, then yes |
 | End-to-end journey | Playwright on `main` | Yes -- blocks the deploy |

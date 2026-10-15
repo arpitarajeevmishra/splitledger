@@ -79,7 +79,7 @@ Details: [`docs/HLD.md`](docs/HLD.md) and [`docs/LLD.md`](docs/LLD.md).
 | Backend | Java 21, Spring Boot 3.x, Spring Security, Spring Data JPA/Hibernate, Flyway |
 | Data | PostgreSQL 16, Redis 7 |
 | Messaging | Kafka API (Redpanda locally/VM), transactional outbox |
-| Frontend | React 18, TypeScript, Vite, TanStack Query, React Router, Tailwind CSS, React Hook Form + Zod |
+| Frontend | React 19, TypeScript (strict), Vite, TanStack Query, React Router, Tailwind CSS v4, React Hook Form + Zod, oxlint + Prettier |
 | Payments | Razorpay Java SDK + Checkout.js (test mode), UPI intent deep links |
 | Testing | JUnit 5, Mockito, jqwik (property-based), ArchUnit, Testcontainers (**CI only**), `EmbeddedKafkaBroker` + GreenMail (in-JVM), Vitest, React Testing Library, Playwright, k6 |
 | DevOps | Docker + Compose (**CI and the VM only, never local**), GitHub Actions, GHCR, AWS EC2 + Caddy (Terraform/ECS as stretch) |
@@ -219,7 +219,7 @@ webhook tunnel. The app goes live with registration switched off and opens to th
 
 | Sprint | Goal | Status |
 |---|---|---|
-| S0 | Foundations & decisions | ⬜ |
+| S0 | Foundations & decisions | 🟨 in progress — SL-001/002/003/004/006/007 done; SL-005 blocked on a JDK, SL-008 on `gh` |
 | S1 | Identity | ⬜ |
 | S2 | Groups, membership & invites | ⬜ |
 | S3 | Money core (splits + ledger) | ⬜ |
