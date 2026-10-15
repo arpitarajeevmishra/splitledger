@@ -1,0 +1,41 @@
+# ---- secrets: never commit these ----
+.env
+.env.*
+!.env.example
+
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+*.log
+hs_err_pid*
+replay_pid*
+
+# ---- Node ----
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# ---- test output ----
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# ---- editors / OS ----
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# ---- local scratch ----
+*.local
+.scratch/
