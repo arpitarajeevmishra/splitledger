@@ -36,18 +36,21 @@ public class RefreshTokenService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final RefreshTokenRepository tokens;
+    private final RefreshTokenChainRevoker chainRevoker;
     private final Duration refreshTtl;
     private final Clock clock;
 
     @Autowired
-    RefreshTokenService(RefreshTokenRepository tokens,
+    RefreshTokenService(RefreshTokenRepository tokens, RefreshTokenChainRevoker chainRevoker,
             @Value("${app.auth.refresh-ttl}") Duration refreshTtl) {
-        this(tokens, refreshTtl, Clock.systemUTC());
+        this(tokens, chainRevoker, refreshTtl, Clock.systemUTC());
     }
 
     /** Visible for testing. */
-    RefreshTokenService(RefreshTokenRepository tokens, Duration refreshTtl, Clock clock) {
+    RefreshTokenService(RefreshTokenRepository tokens, RefreshTokenChainRevoker chainRevoker,
+            Duration refreshTtl, Clock clock) {
         this.tokens = tokens;
+        this.chainRevoker = chainRevoker;
         this.refreshTtl = refreshTtl;
         this.clock = clock;
     }
@@ -78,7 +81,9 @@ public class RefreshTokenService {
             // client is replaying; both mean every token in this chain is suspect.
             log.warn("Refresh token reuse detected for user {}; revoking the chain",
                     existing.userId());
-            revokeAll(existing.userId());
+            // Must commit independently: this method throws immediately below, and that
+            // would roll a same-transaction revocation back. See RefreshTokenChainRevoker.
+            chainRevoker.revokeChain(existing.userId());
             throw new ApiException(ErrorCode.REFRESH_TOKEN_INVALID,
                     "This refresh token has already been used");
         }
@@ -95,13 +100,10 @@ public class RefreshTokenService {
         return new Rotation(existing.userId(), replacementRaw);
     }
 
+    /** Ordinary logout: the caller's transaction commits, so no special propagation. */
     @Transactional
     public void revokeAll(UUID userId) {
-        Instant now = clock.instant();
-        tokens.findAllByUserId(userId).forEach(token -> {
-            token.revoke(now);
-            tokens.save(token);
-        });
+        chainRevoker.revokeChain(userId);
     }
 
     public Duration refreshTtl() {

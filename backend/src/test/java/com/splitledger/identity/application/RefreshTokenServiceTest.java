@@ -16,7 +16,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,13 +33,16 @@ class RefreshTokenServiceTest {
 
     @Mock
     private RefreshTokenRepository repository;
+    @Mock
+    private RefreshTokenChainRevoker chainRevoker;
 
     private RefreshTokenService service;
     private UUID userId;
 
     @BeforeEach
     void setUp() {
-        service = new RefreshTokenService(repository, TTL, Clock.fixed(T0, ZoneOffset.UTC));
+        service = new RefreshTokenService(repository, chainRevoker, TTL,
+                Clock.fixed(T0, ZoneOffset.UTC));
         userId = UUID.randomUUID();
     }
 
@@ -79,19 +81,19 @@ class RefreshTokenServiceTest {
         RefreshToken used = RefreshToken.issue(userId, RefreshTokenService.hash(raw),
                 T0.plus(TTL));
         used.rotateTo(UUID.randomUUID(), T0);          // already rotated away
-        RefreshToken sibling = RefreshToken.issue(userId, "a".repeat(64), T0.plus(TTL));
-
         when(repository.findByTokenHash(RefreshTokenService.hash(raw)))
                 .thenReturn(Optional.of(used));
-        when(repository.findAllByUserId(userId)).thenReturn(List.of(used, sibling));
 
         assertThatThrownBy(() -> service.rotate(raw))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
 
-        // Reuse means the value leaked, so every live token for this user goes.
-        assertThat(sibling.isRevoked()).isTrue();
+        // Reuse means the value leaked, so every live token for this user must go.
+        // Delegated deliberately: revoking here would be rolled back by the throw above,
+        // which is the bug AuthFlowIT caught. This asserts the delegation; the
+        // integration test asserts it actually persists.
+        verify(chainRevoker).revokeChain(userId);
     }
 
     @Test
@@ -107,7 +109,7 @@ class RefreshTokenServiceTest {
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
 
-        verify(repository, never()).findAllByUserId(any());
+        verify(chainRevoker, never()).revokeChain(any());
     }
 
     @Test
