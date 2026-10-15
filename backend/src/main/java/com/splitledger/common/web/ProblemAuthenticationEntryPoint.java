@@ -1,6 +1,6 @@
 package com.splitledger.common.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.splitledger.common.errors.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -21,6 +21,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProblemAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
+    // Jackson 3 (tools.jackson), not Jackson 2 (com.fasterxml.jackson). Spring Boot 4
+    // registers the former; the latter is still on the classpath as a transitive
+    // dependency, so importing it compiles cleanly and then fails to wire at runtime.
     private final ObjectMapper objectMapper;
 
     ProblemAuthenticationEntryPoint(ObjectMapper objectMapper) {
