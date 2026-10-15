@@ -119,8 +119,24 @@ splitledger/
 > directly on your machine; Postgres, Redis and SMTP are managed free-tier services. Docker
 > appears only in CI (Testcontainers, image builds) and on the deployment VM.
 
-Prerequisites: **JDK 21** (Temurin), **Node** as pinned in `.nvmrc`, `git`, `gh`.
-No system Maven needed -- use the wrapper, `./mvnw`.
+### Prerequisites
+
+| | Tool | Why |
+|---|---|---|
+| **Required** | **JDK 21** (Temurin) | Blocks the whole backend. Nothing else is missing |
+| Already present on a typical Mac | `git`, `curl`, `tar`, `shasum` | — |
+| Required | **Node** as pinned in `.nvmrc` (24) | Frontend |
+| Recommended | `gh` | Project board, labels, milestones (SL-008) and setting repository secrets |
+| Optional | `psql` | Convenience only — managed Postgres providers have a web SQL console |
+
+**What you do _not_ need, and why:**
+
+- **Maven** — the project uses the Maven Wrapper (`./mvnw`), which needs only a JDK.
+- **Docker** — images are built on CI runners and run on the deploy host, never locally (ADR-012).
+- **PostgreSQL, Redis, Kafka, Mailhog** — all managed services. Nothing runs on your machine.
+- **ngrok / cloudflared** — no longer needed. Deployment moved to Sprint 6, *before* the gateway
+  sprint, so the Razorpay webhook gets a stable public HTTPS URL instead of a tunnel.
+- **Playwright browsers** — installed by `npx playwright install` in CI, not a system install.
 
 One-time setup:
 1. Create a free managed **Postgres 16** (Neon), **Redis** (Upstash) and **SMTP sandbox** (Mailtrap).
