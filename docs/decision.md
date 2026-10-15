@@ -191,4 +191,4 @@ apology after pushing.
 | O-3 | Whether to move to an LTS JDK at the next release | Revisit after Java 29 (D-04) |
 | O-4 | Whether oxlint's React Hooks coverage is sufficient | Experience during S1–S4 (D-02) |
 | O-5 | Promote the Trivy vulnerability scan to blocking | A clean baseline (D-16) |
-| O-6 | Whether `~/Documents` iCloud sync should be left on, given the project lives there | You — see `ACCOUNTS_AND_ACCESS.md` §3.5 |
+| O-6 | Whether `~/Documents` iCloud sync should be left on, given the project lives there | You — see `ACCOUNTS_AND_ACCESS.md` §3.4 |

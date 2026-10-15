@@ -130,7 +130,7 @@ gh auth login          # choose SSH, and the key above
 Remember its account selection is global. For git operations the SSH alias governs; `gh` matters
 for issues, the board and setting repository secrets.
 
-### 3.5 Where the private key lives — and why not next to the project
+### 3.4 Where the private key lives — and why not next to the project
 
 The request was to keep the key in the personal folder we work in. That folder is
 `~/Documents/personal/`, and two things rule it out:
@@ -152,7 +152,7 @@ As defence in depth, the repository `.gitignore` also refuses key material outri
 `*.key`, `id_ed25519*`, `*_ed25519`, `.ssh/` and friends) — so even a key placed in the project by
 accident cannot be committed without an explicit override.
 
-### 3.4 Commit signing
+### 3.5 Commit signing
 
 Nothing is configured, so nothing to override. If work later sets `commit.gpgsign` globally, add
 `[commit] gpgsign = false` (or a personal signing key) to `~/.gitconfig-personal` so personal
