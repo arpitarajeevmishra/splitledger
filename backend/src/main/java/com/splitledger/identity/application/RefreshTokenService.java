@@ -16,6 +16,7 @@ import java.util.HexFormat;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ public class RefreshTokenService {
     private final Duration refreshTtl;
     private final Clock clock;
 
+    @Autowired
     RefreshTokenService(RefreshTokenRepository tokens,
             @Value("${app.auth.refresh-ttl}") Duration refreshTtl) {
         this(tokens, refreshTtl, Clock.systemUTC());
