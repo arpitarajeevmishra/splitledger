@@ -15,10 +15,10 @@ Checked before advising, so none of this is guesswork:
 
 | | State |
 |---|---|
-| Global git `user.name` / `user.email` | **Not set at all** |
+| Global git `user.name` / `user.email` | **Not set at all** (repo-local identity is set instead) |
 | Git credential helpers, `includeIf` rules | None |
 | SSH keys | **None** (no `~/.ssh/config`, no keypairs) |
-| `gh` CLI | **Not installed** |
+| `gh` CLI | Installed 2026-10-15 at `/opt/homebrew/bin/gh` (v2.102.0), via Homebrew. Not on a non-interactive shell's `PATH`, so scripts should use the full path or `eval "$(brew shellenv)"` |
 | Docker logins | **Docker Hub is logged in**, plus a work AWS ECR registry in `ap-south-1`, via the Docker Desktop credential store |
 
 Two conclusions:
@@ -77,7 +77,14 @@ email addresses private* in GitHub settings.
 
 ### 3.2 Authentication: a dedicated SSH key with a host alias
 
-There are no keys on this machine, so start clean:
+There are no keys on this machine, so start clean.
+
+**Shortcut now that `gh` is installed:** `gh auth login` → GitHub.com → **SSH** → *Generate a new
+SSH key* will create the key **and** upload it to the account in one step, which replaces the two
+manual steps below. It offers a passphrase; take it. Do this unless you specifically want the key
+named and placed yourself.
+
+Manually:
 
 ```bash
 ssh-keygen -t ed25519 -C "splitledger-personal" -f ~/.ssh/id_ed25519_personal
