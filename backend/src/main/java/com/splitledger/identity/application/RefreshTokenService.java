@@ -106,6 +106,21 @@ public class RefreshTokenService {
         chainRevoker.revokeChain(userId);
     }
 
+    /**
+     * End the session a raw token belongs to, if any. Deliberately does not rotate and
+     * deliberately never throws: an unknown or already-used token simply means there is
+     * no session left to end, and throwing would mark the caller's transaction
+     * rollback-only even if the caller caught it.
+     */
+    @Transactional
+    public void revokeSession(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return;
+        }
+        tokens.findByTokenHash(hash(rawToken))
+                .ifPresent(token -> chainRevoker.revokeChain(token.userId()));
+    }
+
     public Duration refreshTtl() {
         return refreshTtl;
     }

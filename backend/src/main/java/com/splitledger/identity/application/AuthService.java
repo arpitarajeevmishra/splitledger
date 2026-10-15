@@ -88,18 +88,18 @@ public class AuthService {
                 jwtService.accessTtl().toSeconds(), rotation.rawToken(), user);
     }
 
-    /** Idempotent: logging out twice, or with no session, is a success. */
+    /**
+     * Idempotent: logging out twice, or with no session, is a success.
+     *
+     * <p>This used to call {@code rotate()} and swallow the exception, which was wrong
+     * twice over. Rotating issues a replacement token, which is absurd while logging out;
+     * and the throw marked the surrounding transaction rollback-only, so the commit failed
+     * with a 500 even though the exception was caught. Catching an exception does not
+     * un-mark a transaction.
+     */
     @Transactional
     public void logout(String rawRefreshToken) {
-        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
-            return;
-        }
-        try {
-            RefreshTokenService.Rotation rotation = refreshTokens.rotate(rawRefreshToken);
-            refreshTokens.revokeAll(rotation.userId());
-        } catch (ApiException ex) {
-            // An unknown or already-used token means there is no session to end.
-        }
+        refreshTokens.revokeSession(rawRefreshToken);
     }
 
     private Session startSession(User user) {

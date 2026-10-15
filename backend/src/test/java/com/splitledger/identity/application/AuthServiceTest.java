@@ -131,21 +131,23 @@ class AuthServiceTest {
     }
 
     @Test
-    void logoutWithoutASessionIsASuccessAndTouchesNothing() {
-        service(true).logout(null);
-        service(true).logout("   ");
+    void logoutEndsTheSessionWithoutRotatingAnything() {
+        service(true).logout("a-live-token");
 
+        verify(refreshTokens).revokeSession("a-live-token");
+        // Rotating would issue a replacement token while logging out, and the throw on an
+        // already-used token would mark the transaction rollback-only -- a 500 even when
+        // the exception is caught. See decision log D-30.
         verify(refreshTokens, never()).rotate(anyString());
-        verify(refreshTokens, never()).revokeAll(any(UUID.class));
     }
 
     @Test
-    void logoutSwallowsAnUnknownTokenRatherThanFailing() {
-        when(refreshTokens.rotate("stale"))
-                .thenThrow(new ApiException(ErrorCode.REFRESH_TOKEN_INVALID));
+    void logoutWithoutASessionIsStillASuccess() {
+        service(true).logout(null);
+        service(true).logout("   ");
 
-        service(true).logout("stale");   // must not throw
-
+        // The null/blank check lives in revokeSession, which never throws.
+        verify(refreshTokens, never()).rotate(anyString());
         verify(refreshTokens, never()).revokeAll(any(UUID.class));
     }
 }
