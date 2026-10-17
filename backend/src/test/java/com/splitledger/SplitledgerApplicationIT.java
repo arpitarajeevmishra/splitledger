@@ -10,7 +10,9 @@ import org.springframework.context.annotation.Import;
  * This runs in CI only, via ./mvnw verify (ADR-012).
  */
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+// app.jwt.secret has no default on purpose: production must fail fast rather than boot
+// with a guessable signing key. Tests therefore supply one explicitly.
+@SpringBootTest(properties = "app.jwt.secret=a-context-load-test-secret-long-enough-for-hs256")
 class SplitledgerApplicationIT {
 
     @Test

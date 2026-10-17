@@ -1,6 +1,8 @@
-package com.splitledger.common.config;
+package com.splitledger.config;
 
 import com.splitledger.common.web.CorrelationIdFilter;
+import com.splitledger.common.web.ProblemAuthenticationEntryPoint;
+import com.splitledger.identity.api.JwtAuthenticationFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -12,44 +14,60 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
- * Baseline security. Real authentication arrives in S1 (SL-101/SL-102); this exists
- * so the skeleton is not accidentally wide open, and so the few genuinely public
- * routes stay reachable.
+ * Application-wide security wiring.
+ *
+ * <p>This deliberately does not live in {@code common}: it must reference the identity
+ * module's authentication filter, and an ArchUnit rule forbids {@code common} depending on
+ * feature packages. Rather than exempt the rule, the class moved to where it belongs —
+ * {@code common} is shared plumbing, while security configuration is application assembly.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     private final List<String> allowedOrigins;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ProblemAuthenticationEntryPoint authenticationEntryPoint;
 
-    // Constructor injection, not a @Value field: field injection hides dependencies
-    // and ArchUnit rejects it (see ArchitectureTest).
-    SecurityConfig(@Value("${app.cors.allowed-origins}") List<String> allowedOrigins) {
+    SecurityConfig(@Value("${app.cors.allowed-origins}") List<String> allowedOrigins,
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            ProblemAuthenticationEntryPoint authenticationEntryPoint) {
         this.allowedOrigins = List.copyOf(allowedOrigins);
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                // No cookie is used for authorisation (the refresh cookie is scoped to one
-                // path and SameSite=Strict), so CSRF tokens buy nothing here. ADR-011.
+                // The only cookie is the refresh token: SameSite=Strict and scoped to one
+                // path, so CSRF tokens buy nothing. ADR-011.
                 .csrf(csrf -> csrf.disable())
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(e -> e.authenticationEntryPoint(authenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout").permitAll()
                         .requestMatchers("/api/v1/health-check").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // Signature-verified, never under JWT, never under /api/v1. LLD 7.4.
                         .requestMatchers(HttpMethod.POST, "/webhooks/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                        .permitAll()
                         .anyRequest().authenticated())
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 
