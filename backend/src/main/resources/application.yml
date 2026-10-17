@@ -1,10 +1,34 @@
 spring:
+  # .env is the documented place for local credentials (README, check-env.sh), but
+  # nothing was reading it into the environment, so ${DB_URL} resolved to nothing
+  # and the documented `./mvnw spring-boot:run` could not start. Both paths are
+  # listed because the app is run from backend/ and occasionally the repo root.
+  # 'optional:' keeps CI working, where there is no .env and the pipeline exports
+  # the variables itself.
+  config:
+    import:
+      - optional:file:./.env[.properties]
+      - optional:file:../.env[.properties]
   application:
     name: splitledger
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+    hikari:
+      # The managed dev instance (Neon, ADR-012) suspends its compute after five
+      # minutes without queries and drops the connections it was holding. A pool
+      # that keeps idle connections past that point hands out a dead socket on
+      # the next request. Reaping them first instead means the request after a
+      # suspend opens a fresh connection and wakes the compute, which costs a few
+      # hundred milliseconds and nothing else.
+      #
+      # Deliberately not keepalive-time: pinging to hold the compute awake would
+      # defeat scale-to-zero and spend the monthly compute allowance on nothing.
+      minimum-idle: ${DB_POOL_MIN_IDLE:0}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:120000}     # 2 min, inside the 5-min suspend
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:600000}
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
   jpa:
     open-in-view: false
     hibernate:
@@ -51,6 +75,18 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  cache:
+    # With a blank REDIS_URL these caches are created in-process, in this application's
+    # own heap (ADR-015), so each one states how large it may get and how stale it may
+    # serve. There is no default and no unlimited: an undeclared cache does not exist,
+    # and a declared one is always bounded.
+    caches:
+      # LLD section 13: bal:{groupId} -> net + pairwise + simplified balances, 5 minutes,
+      # invalidated on commit of anything that moves a balance. 10k groups of cached
+      # balances is far more than this deployment will hold and still a bounded number.
+      bal:
+        maximum-size: ${CACHE_BAL_MAX_SIZE:10000}
+        time-to-live: ${CACHE_BAL_TTL:5m}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   jwt:
