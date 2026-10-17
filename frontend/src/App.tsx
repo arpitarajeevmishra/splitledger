@@ -1,15 +1,23 @@
-import { HealthStatus } from './features/health/HealthStatus'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { LoginPage } from './features/auth/LoginPage'
+import { RegisterPage } from './features/auth/RegisterPage'
+import { DashboardPage } from './features/dashboard/DashboardPage'
+import { ProtectedRoute } from './routes/ProtectedRoute'
 
 export default function App() {
   return (
-    <main className="mx-auto max-w-xl p-8 font-sans">
-      <h1 className="text-2xl font-semibold text-slate-900">SplitLedger</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Ledger-first expense splitting. Sprint 0 skeleton.
-      </p>
-      <div className="mt-6 rounded-lg border border-slate-200 p-4">
-        <HealthStatus />
-      </div>
-    </main>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }

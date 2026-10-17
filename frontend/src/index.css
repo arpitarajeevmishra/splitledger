@@ -1,1 +1,114 @@
 @import 'tailwindcss';
+
+/*
+ * Tokens from the PRD's design-system table, which is the operative spec: its dark values
+ * match what dashboard_balances_dark_mode actually uses, whereas knot_design_system's
+ * prose is an earlier iteration (#0b0f17/#111827). Light mode is "Ledger Minimal", dark
+ * is "Knot Dark" -- two named systems, one per theme, not two competing proposals.
+ *
+ * Everything below is a semantic name over a hex value. Components reference the semantic
+ * name only, so re-theming is this file and nothing else.
+ */
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  /* Ledger Minimal (light) */
+  --surface: #ffffff;
+  --surface-1: #f8f9ff;
+  --surface-2: #eff4ff;
+  --border: #d3e4fe;
+  --border-strong: #b9cdec;
+  --text: #0b0f17;
+  --text-muted: #4b5563;
+  --text-dim: #6b7280;
+  --accent: #0b0f17;          /* obsidian CTA */
+  --on-accent: #ffffff;
+  --positive: #10b981;
+  --negative: #e11d48;
+  --info: #0ea5e9;
+}
+
+/* Dark is the design's preferred mode, so it follows the system unless overridden. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: #0f131c;
+    --surface-1: #181c24;
+    --surface-2: #1e2430;
+    --border: #222d42;
+    --border-strong: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent: #10b981;        /* luminous emerald */
+    --on-accent: #0f131c;
+    --positive: #34d399;
+    --negative: #fb7185;
+    --info: #38bdf8;
+  }
+}
+
+:root[data-theme='dark'] {
+  --surface: #0f131c;
+  --surface-1: #181c24;
+  --surface-2: #1e2430;
+  --border: #222d42;
+  --border-strong: #334155;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --accent: #10b981;
+  --on-accent: #0f131c;
+  --positive: #34d399;
+  --negative: #fb7185;
+  --info: #38bdf8;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-ink-dim: var(--text-dim);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-info: var(--info);
+
+  /* The PRD allows Geist *or* Inter; Inter is used because it is reliably on Google
+     Fonts. Swapping to Geist is this line plus the <link> in index.html. */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* "roundedness: 1" -- compact radii, no casual curves. */
+  --radius-sm: 2px;
+  --radius-DEFAULT: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--surface);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Every figure in this product is money. Tabular numerals are a correctness feature, not
+ * a stylistic one: without them digits shift width and columns of amounts stop aligning,
+ * which is exactly where a misread balance comes from.
+ */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

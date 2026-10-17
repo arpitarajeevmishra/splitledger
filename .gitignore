@@ -11,6 +11,13 @@
 docs/
 frontend/README.md
 
+# ---- iCloud Drive conflict copies ----
+# ~/Documents is iCloud-synced, which silently produced 22 duplicate "Foo 2.java" files.
+# `git add -A` committed them and the backend stopped compiling with "duplicate class".
+# Ignoring them stops the symptom; moving the project out of ~/Documents stops the cause.
+* [0-9].*
+*.icloud
+
 # ---- key material: must never be committed ----
 # Defence in depth. Publishing a private key is not a recoverable mistake.
 *.pem
