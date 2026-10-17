@@ -1,0 +1,4 @@
+# Registered here rather than as a @Configuration because autoconfiguration imports are
+# resolved before the context exists; see OptionalRedisEnvironmentPostProcessor.
+org.springframework.boot.EnvironmentPostProcessor=\
+com.splitledger.common.config.OptionalRedisEnvironmentPostProcessor
