@@ -10,13 +10,14 @@ import org.springframework.util.StringUtils;
  * "Is this instance running without a Redis?" -- the question ADR-015 turns on, asked
  * where a {@code @Configuration} class can ask it.
  *
- * <p>Keyed on {@code REDIS_URL}, and read with {@code hasText} rather than mere presence,
- * because that is exactly how the environment post-processor in this package decides to
- * exclude the Redis autoconfiguration. The two must agree: if this condition were keyed
- * on anything else -- a {@code spring.cache.type} property, a profile, the presence of a
- * {@code RedisConnectionFactory} -- a configuration the post-processor reads as "no Redis"
- * could be read here as "Redis", leaving a context with no cache manager at all. One
- * variable, one reading of it, in both places.
+ * <p>Keyed on {@link OptionalRedisEnvironmentPostProcessor#REDIS_URL}, the same constant
+ * that class uses, and read with {@code hasText} rather than mere presence, because that
+ * is exactly how it decides whether to exclude the Redis autoconfiguration. The two must
+ * agree: if this condition were keyed on anything else -- a {@code spring.cache.type}
+ * property, a profile, the presence of a {@code RedisConnectionFactory} -- a configuration
+ * the post-processor reads as "no Redis" could be read here as "Redis", leaving a context
+ * with no cache manager at all. One variable, one reading of it, in both places; sharing
+ * the constant is what keeps that true as the two are edited.
  *
  * <p>The limitation is inherited too: a Redis supplied by Testcontainers through
  * {@code @ServiceConnection} arrives as a {@code ConnectionDetails} bean and never as
@@ -26,12 +27,10 @@ import org.springframework.util.StringUtils;
  */
 class RedisNotConfiguredCondition implements Condition {
 
-    /** The variable itself, not a Spring property: it comes from the shell or .env. */
-    static final String REDIS_URL = "REDIS_URL";
-
     /** Exposed so the decision can be unit-tested without a {@code ConditionContext}. */
     static boolean redisIsConfigured(Environment environment) {
-        return StringUtils.hasText(environment.getProperty(REDIS_URL));
+        return StringUtils.hasText(
+                environment.getProperty(OptionalRedisEnvironmentPostProcessor.REDIS_URL));
     }
 
     @Override

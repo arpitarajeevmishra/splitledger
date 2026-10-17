@@ -11,8 +11,9 @@ import org.springframework.mock.env.MockEnvironment;
  * Plain unit test: no Spring context, no database, no Docker. Runs in Surefire.
  *
  * <p>The readings asserted here are the same ones the environment post-processor applies
- * when it decides whether to exclude the Redis autoconfiguration. If these two drift
- * apart, a deployment ends up with neither cache manager.
+ * when it decides whether to exclude the Redis autoconfiguration -- the same variable, read
+ * the same way. If those two ever drift apart, a deployment ends up with neither cache
+ * manager, so the variable is named from one place in both tests.
  */
 class RedisNotConfiguredConditionTest {
 
@@ -26,7 +27,7 @@ class RedisNotConfiguredConditionTest {
     void whitespaceCountsAsBlankSoACarelesslyEditedEnvFileStillSelectsTheInProcessCache(
             String blank) {
         MockEnvironment environment =
-                new MockEnvironment().withProperty(RedisNotConfiguredCondition.REDIS_URL, blank);
+                new MockEnvironment().withProperty(OptionalRedisEnvironmentPostProcessor.REDIS_URL, blank);
 
         assertThat(RedisNotConfiguredCondition.redisIsConfigured(environment)).isFalse();
     }
@@ -34,7 +35,7 @@ class RedisNotConfiguredConditionTest {
     @Test
     void aConfiguredRedisUrlMeansRedis() {
         MockEnvironment environment = new MockEnvironment()
-                .withProperty(RedisNotConfiguredCondition.REDIS_URL,
+                .withProperty(OptionalRedisEnvironmentPostProcessor.REDIS_URL,
                         "rediss://cache.example.com:6380");
 
         assertThat(RedisNotConfiguredCondition.redisIsConfigured(environment)).isTrue();
