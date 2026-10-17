@@ -39,6 +39,18 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  cache:
+    # With a blank REDIS_URL these caches are created in-process, in this application's
+    # own heap (ADR-015), so each one states how large it may get and how stale it may
+    # serve. There is no default and no unlimited: an undeclared cache does not exist,
+    # and a declared one is always bounded.
+    caches:
+      # LLD section 13: bal:{groupId} -> net + pairwise + simplified balances, 5 minutes,
+      # invalidated on commit of anything that moves a balance. 10k groups of cached
+      # balances is far more than this deployment will hold and still a bounded number.
+      bal:
+        maximum-size: ${CACHE_BAL_MAX_SIZE:10000}
+        time-to-live: ${CACHE_BAL_TTL:5m}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
