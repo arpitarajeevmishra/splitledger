@@ -31,7 +31,12 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest(properties = {
         "app.registration-enabled=true",
         "app.jwt.secret=an-integration-test-secret-long-enough-for-hs256",
-        "app.auth.cookie-secure=false"
+        "app.auth.cookie-secure=false",
+        // This test registers and logs in several times from one address. Rate limiting has
+        // its own test; leaving the production allowance here would couple the two and make
+        // an unrelated assertion fail as the suite grew.
+        "app.rate-limit.limits.login.capacity=1000",
+        "app.rate-limit.limits.register.capacity=1000"
 })
 class AuthFlowIT {
 

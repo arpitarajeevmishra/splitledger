@@ -4,12 +4,19 @@ import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 /**
  * The module boundaries from HLD section 7, enforced rather than described. These are
@@ -60,6 +67,46 @@ class ArchitectureTest {
                     .that().resideOutsideOfPackage("..payment..")
                     .should().dependOnClassesThat().resideInAPackage("com.razorpay..")
                     .because("the gateway lives behind the PaymentProvider port (ADR-006)");
+
+    /**
+     * Spring cannot choose between two constructors unless one is marked, and the failure
+     * is a runtime {@code NoSuchMethodException: <init>()} that only appears when a context
+     * loads -- which, with no local database, means only in CI.
+     *
+     * <p>This project keeps a second constructor on several services so a {@code Clock} or
+     * {@code TimeMeter} can be injected and time-dependent behaviour tested deterministically.
+     * That pattern is worth keeping, so the rule enforces the annotation rather than banning
+     * the pattern. Written after making the same mistake twice.
+     */
+    @ArchTest
+    static final ArchRule spring_beans_with_two_constructors_must_mark_one =
+            ArchRuleDefinition.classes()
+                    .that(new DescribedPredicate<JavaClass>(
+                            "are Spring-managed and declare more than one constructor") {
+                        @Override
+                        public boolean test(JavaClass clazz) {
+                            boolean managed = clazz.isAnnotatedWith(Component.class)
+                                    || clazz.isMetaAnnotatedWith(Component.class);
+                            return managed && clazz.getConstructors().size() > 1;
+                        }
+                    })
+                    .should(new ArchCondition<JavaClass>(
+                            "annotate exactly one constructor with @Autowired") {
+                        @Override
+                        public void check(JavaClass clazz, ConditionEvents events) {
+                            long marked = clazz.getConstructors().stream()
+                                    .filter(c -> c.isAnnotatedWith(Autowired.class))
+                                    .count();
+                            if (marked != 1) {
+                                events.add(SimpleConditionEvent.violated(clazz,
+                                        clazz.getName() + " declares "
+                                                + clazz.getConstructors().size()
+                                                + " constructors but " + marked
+                                                + " are annotated @Autowired; Spring will fail"
+                                                + " at context load with NoSuchMethodException"));
+                            }
+                        }
+                    });
 
     @ArchTest
     static final ArchRule no_field_injection = NO_CLASSES_SHOULD_USE_FIELD_INJECTION;

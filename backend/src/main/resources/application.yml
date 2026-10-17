@@ -98,6 +98,18 @@ app:
     refresh-ttl: P7D
     # Off locally so the cookie works over plain HTTP; forced on in prod below.
     cookie-secure: ${COOKIE_SECURE:false}
+  rate-limit:
+    # LLD section 12. Tight on purpose: these guard credential endpoints, and no
+    # legitimate user logs in five times a minute or creates five accounts an hour.
+    # In-process, so with a second instance each would allow the full quota -- this moves
+    # to a shared store when the cache does (ADR-015).
+    limits:
+      login:
+        capacity: 5
+        per: PT1M
+      register:
+        capacity: 5
+        per: PT1H
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
   registration-enabled: ${REGISTRATION_ENABLED:false}
   payments:
