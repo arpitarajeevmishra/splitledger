@@ -5,5 +5,5 @@ package com.splitledger.identity.api.dto;
  * token is deliberately absent: it is set as an httpOnly cookie and must never be readable
  * by JavaScript (ADR-011).
  */
-public record AuthResponse(String accessToken, long expiresInSeconds, UserResponse user) {
+public record AuthResponse(String accessToken, long expiresInSeconds, SelfProfileResponse user) {
 }

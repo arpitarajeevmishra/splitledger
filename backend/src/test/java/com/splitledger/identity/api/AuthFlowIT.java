@@ -2,6 +2,7 @@ package com.splitledger.identity.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -127,6 +128,35 @@ class AuthFlowIT {
         mockMvc.perform(post("/api/v1/auth/refresh")
                         .cookie(new Cookie("refresh_token", rotated.getValue())))
                 .andExpect(status().isUnauthorized());
+
+        // --- the profile endpoints, which take no user id in the path ---
+        mockMvc.perform(get("/api/v1/users/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+
+        mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(email))
+                .andExpect(jsonPath("$.name").value("Rahul"))
+                // Present and null, not absent: the field is serialised so a client can see
+                // it exists and is empty, which matters for a PATCH-able resource.
+                .andExpect(jsonPath("$.upiId").isEmpty());
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"upiId\":\"rahul@oksbi\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.upiId").value("rahul@oksbi"))
+                // name was not supplied, so it must be untouched
+                .andExpect(jsonPath("$.name").value("Rahul"));
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"upiId\":\"not-a-vpa\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         // --- logout is idempotent even with no live session ---
         mockMvc.perform(post("/api/v1/auth/logout")

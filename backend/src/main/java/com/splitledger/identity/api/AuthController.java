@@ -3,7 +3,7 @@ package com.splitledger.identity.api;
 import com.splitledger.identity.api.dto.AuthResponse;
 import com.splitledger.identity.api.dto.LoginRequest;
 import com.splitledger.identity.api.dto.RegisterRequest;
-import com.splitledger.identity.api.dto.UserResponse;
+import com.splitledger.identity.api.dto.SelfProfileResponse;
 import com.splitledger.common.ratelimit.RateLimiter;
 import com.splitledger.identity.application.AuthService;
 import com.splitledger.identity.domain.User;
@@ -99,7 +99,7 @@ public class AuthController {
         return ResponseEntity.status(status)
                 .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refreshToken()).toString())
                 .body(new AuthResponse(session.accessToken(), session.expiresInSeconds(),
-                        UserResponse.from(session.user())));
+                        SelfProfileResponse.from(session.user())));
     }
 
     private ResponseCookie refreshCookie(String rawToken) {
