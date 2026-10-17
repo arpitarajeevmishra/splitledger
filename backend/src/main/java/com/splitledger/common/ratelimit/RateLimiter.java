@@ -9,6 +9,7 @@ import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.TimeMeter;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,6 +32,7 @@ public class RateLimiter {
     private final TimeMeter timeMeter;
     private final Cache<String, Bucket> buckets;
 
+    @Autowired
     RateLimiter(RateLimitProperties properties) {
         this(properties, TimeMeter.SYSTEM_MILLISECONDS, 100_000);
     }
