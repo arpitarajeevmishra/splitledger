@@ -33,6 +33,18 @@ management:
     health:
       probes:
         enabled: true
+      # Without this, diagnosing a DOWN means guessing which component failed.
+      # Turned off again in the prod profile below.
+      show-details: always
+  health:
+    redis:
+      # Redis is optional (ADR-015): the deployed runtime uses an in-process cache, and
+      # the design already requires that a cache outage degrade to the database rather
+      # than fail a request. It must therefore not fail the health check either --
+      # otherwise /actuator/health reports DOWN on a perfectly healthy app and the
+      # deployment smoke test rolls back every single release. Re-enable this if and
+      # when a second app instance makes shared Redis a real dependency.
+      enabled: false
 
 springdoc:
   swagger-ui:
@@ -60,3 +72,7 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+management:
+  endpoint:
+    health:
+      show-details: never
