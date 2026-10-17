@@ -25,6 +25,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * Declared before the ApiException handler it specialises. A 429 without
+     * {@code Retry-After} tells the client it was throttled but not when to come back,
+     * so it usually retries at once and is throttled again.
+     */
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimited(RateLimitExceededException ex) {
+        long seconds = Math.max(1, ex.retryAfter().toSeconds());
+        return ResponseEntity.status(ex.code().status())
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(problem(ex.code(), ex.getMessage()));
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemDetail> handleApiException(ApiException ex) {
         return ResponseEntity.status(ex.code().status())
