@@ -49,7 +49,9 @@ say "Checking $ENV_FILE"
 say
 say "Required variables"
 for v in DB_URL DB_USER DB_PASSWORD JWT_SECRET; do
-  if [[ -n "${!v:-}" && "${!v}" != *"<host>"* ]]; then ok "$v is set"; else bad "$v is empty or still a placeholder"; fi
+  # Any angle bracket means an unfilled placeholder: the Neon host template in
+  # .env.example is ep-<id>.<region>..., not a literal <host>.
+  if [[ -n "${!v:-}" && "${!v}" != *"<"* ]]; then ok "$v is set"; else bad "$v is empty or still a placeholder"; fi
 done
 if [[ -n "${JWT_SECRET:-}" && ${#JWT_SECRET} -lt 32 ]]; then
   bad "JWT_SECRET is ${#JWT_SECRET} chars; HS256 wants at least 32"
