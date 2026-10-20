@@ -68,3 +68,7 @@ Thumbs.db
 # ---- local scratch ----
 *.local
 .scratch/
+
+# Local Claude Code state: worktrees and the dev-server launch config are this
+# machine's, not the project's.
+.claude/

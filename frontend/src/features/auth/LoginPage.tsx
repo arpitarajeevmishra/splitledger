@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { messageFor } from '../../api/problem'
 import { Button } from '../../components/ui/Button'
 import { Field } from '../../components/ui/Field'
+import { useAfterAuthRedirect } from '../../auth/useAfterAuthRedirect'
 import { useAuth } from '../../auth/useAuth'
 import { loginSchema, type LoginValues } from './schemas'
 import { AuthLayout } from './AuthLayout'
@@ -12,6 +13,8 @@ import { AuthLayout } from './AuthLayout'
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  // Following an invite link lands here; signing in has to go back to it.
+  const redirectTo = useAfterAuthRedirect()
   const [formError, setFormError] = useState<string | null>(null)
   const {
     register,
@@ -23,7 +26,7 @@ export function LoginPage() {
     setFormError(null)
     try {
       await login(values.email, values.password)
-      navigate('/', { replace: true })
+      navigate(redirectTo, { replace: true })
     } catch (error) {
       // Deliberately the same message for an unknown email and a wrong password: telling
       // them apart would let anyone enumerate which addresses have accounts.
