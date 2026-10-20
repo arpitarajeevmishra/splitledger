@@ -2,17 +2,12 @@ package com.splitledger.identity.application;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.security.SecureTokens;
 import com.splitledger.identity.domain.RefreshToken;
 import com.splitledger.identity.infra.RefreshTokenRepository;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class RefreshTokenService {
 
     private static final Logger log = LoggerFactory.getLogger(RefreshTokenService.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final RefreshTokenRepository tokens;
     private final RefreshTokenChainRevoker chainRevoker;
@@ -59,8 +53,8 @@ public class RefreshTokenService {
     @Transactional
     public String issue(UUID userId) {
         Instant now = clock.instant();
-        String raw = randomToken();
-        tokens.save(RefreshToken.issue(userId, hash(raw), now.plus(refreshTtl)));
+        String raw = SecureTokens.random();
+        tokens.save(RefreshToken.issue(userId, SecureTokens.hash(raw), now.plus(refreshTtl)));
         return raw;
     }
 
@@ -73,7 +67,7 @@ public class RefreshTokenService {
     @Transactional
     public Rotation rotate(String rawToken) {
         Instant now = clock.instant();
-        RefreshToken existing = tokens.findByTokenHash(hash(rawToken))
+        RefreshToken existing = tokens.findByTokenHash(SecureTokens.hash(rawToken))
                 .orElseThrow(() -> new ApiException(ErrorCode.REFRESH_TOKEN_INVALID));
 
         if (existing.isRevoked()) {
@@ -91,9 +85,9 @@ public class RefreshTokenService {
             throw new ApiException(ErrorCode.REFRESH_TOKEN_INVALID, "Refresh token has expired");
         }
 
-        String replacementRaw = randomToken();
+        String replacementRaw = SecureTokens.random();
         RefreshToken replacement =
-                RefreshToken.issue(existing.userId(), hash(replacementRaw), now.plus(refreshTtl));
+                RefreshToken.issue(existing.userId(), SecureTokens.hash(replacementRaw), now.plus(refreshTtl));
         tokens.save(replacement);
         existing.rotateTo(replacement.id(), now);
         tokens.save(existing);
@@ -117,7 +111,7 @@ public class RefreshTokenService {
         if (rawToken == null || rawToken.isBlank()) {
             return;
         }
-        tokens.findByTokenHash(hash(rawToken))
+        tokens.findByTokenHash(SecureTokens.hash(rawToken))
                 .ifPresent(token -> chainRevoker.revokeChain(token.userId()));
     }
 
@@ -128,19 +122,5 @@ public class RefreshTokenService {
     public record Rotation(UUID userId, String rawToken) {
     }
 
-    private static String randomToken() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
 
-    /** SHA-256 hex is 64 characters, which is exactly the column width. */
-    static String hash(String raw) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required by the JDK", ex);
-        }
-    }
 }

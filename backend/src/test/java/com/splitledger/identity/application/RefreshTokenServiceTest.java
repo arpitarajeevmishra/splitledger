@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.security.SecureTokens;
 import com.splitledger.identity.domain.RefreshToken;
 import com.splitledger.identity.infra.RefreshTokenRepository;
 import java.time.Clock;
@@ -55,15 +56,15 @@ class RefreshTokenServiceTest {
         assertThat(raw).isNotBlank();
         // The stored value must be the hash, and must not be the raw token.
         assertThat(saved.getValue().expiresAt()).isEqualTo(T0.plus(TTL));
-        assertThat(RefreshTokenService.hash(raw)).hasSize(64);
+        assertThat(SecureTokens.hash(raw)).hasSize(64);
     }
 
     @Test
     void rotationIssuesANewTokenAndRevokesTheOld() {
         String raw = "the-original-token";
-        RefreshToken original = RefreshToken.issue(userId, RefreshTokenService.hash(raw),
+        RefreshToken original = RefreshToken.issue(userId, SecureTokens.hash(raw),
                 T0.plus(TTL));
-        when(repository.findByTokenHash(RefreshTokenService.hash(raw)))
+        when(repository.findByTokenHash(SecureTokens.hash(raw)))
                 .thenReturn(Optional.of(original));
 
         RefreshTokenService.Rotation rotation = service.rotate(raw);
@@ -78,10 +79,10 @@ class RefreshTokenServiceTest {
     @Test
     void reusingAnAlreadyRotatedTokenRevokesTheWholeChain() {
         String raw = "a-token-that-was-already-used";
-        RefreshToken used = RefreshToken.issue(userId, RefreshTokenService.hash(raw),
+        RefreshToken used = RefreshToken.issue(userId, SecureTokens.hash(raw),
                 T0.plus(TTL));
         used.rotateTo(UUID.randomUUID(), T0);          // already rotated away
-        when(repository.findByTokenHash(RefreshTokenService.hash(raw)))
+        when(repository.findByTokenHash(SecureTokens.hash(raw)))
                 .thenReturn(Optional.of(used));
 
         assertThatThrownBy(() -> service.rotate(raw))
@@ -99,9 +100,9 @@ class RefreshTokenServiceTest {
     @Test
     void rejectsAnExpiredTokenWithoutRevokingAnythingElse() {
         String raw = "an-expired-token";
-        RefreshToken expired = RefreshToken.issue(userId, RefreshTokenService.hash(raw),
+        RefreshToken expired = RefreshToken.issue(userId, SecureTokens.hash(raw),
                 T0.minusSeconds(1));
-        when(repository.findByTokenHash(RefreshTokenService.hash(raw)))
+        when(repository.findByTokenHash(SecureTokens.hash(raw)))
                 .thenReturn(Optional.of(expired));
 
         assertThatThrownBy(() -> service.rotate(raw))
@@ -120,11 +121,5 @@ class RefreshTokenServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
-    }
-
-    @Test
-    void hashingIsStableAndDiffersPerInput() {
-        assertThat(RefreshTokenService.hash("abc")).isEqualTo(RefreshTokenService.hash("abc"));
-        assertThat(RefreshTokenService.hash("abc")).isNotEqualTo(RefreshTokenService.hash("abd"));
     }
 }

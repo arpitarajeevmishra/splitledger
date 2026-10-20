@@ -60,6 +60,10 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout").permitAll()
+                        // The invite landing page must be able to say what the
+                        // invitation is for before asking anyone to sign in. Preview only
+                        // -- accept and decline fall through to authenticated below.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/invites/*").permitAll()
                         .requestMatchers("/api/v1/health-check").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // Signature-verified, never under JWT, never under /api/v1. LLD 7.4.
