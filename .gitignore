@@ -72,3 +72,6 @@ Thumbs.db
 # Local Claude Code state: worktrees and the dev-server launch config are this
 # machine's, not the project's.
 .claude/
+
+# jqwik's failure-replay cache: local state that records which samples failed here.
+.jqwik-database
