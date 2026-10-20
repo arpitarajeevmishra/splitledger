@@ -1,12 +1,10 @@
 package com.splitledger.identity.api;
 
-import com.splitledger.common.errors.ApiException;
-import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.web.AuthenticatedUser;
 import com.splitledger.identity.api.dto.SelfProfileResponse;
 import com.splitledger.identity.api.dto.UpdateProfileRequest;
 import com.splitledger.identity.application.UserService;
 import jakarta.validation.Valid;
-import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -32,25 +30,14 @@ public class UserController {
 
     @GetMapping("/me")
     public SelfProfileResponse me(Authentication authentication) {
-        return SelfProfileResponse.from(userService.requireById(currentUserId(authentication)));
+        return SelfProfileResponse.from(userService.requireById(AuthenticatedUser.require(authentication)));
     }
 
     @PatchMapping("/me")
     public SelfProfileResponse updateMe(Authentication authentication,
             @Valid @RequestBody UpdateProfileRequest request) {
         return SelfProfileResponse.from(userService.updateProfile(
-                currentUserId(authentication), request.name(), request.upiId()));
+                AuthenticatedUser.require(authentication), request.name(), request.upiId()));
     }
 
-    /**
-     * The JWT filter puts the user id in as the principal. Read explicitly rather than via
-     * {@code @AuthenticationPrincipal} so a principal of an unexpected type fails as a
-     * clear 401 instead of a confusing argument-resolution error.
-     */
-    private static UUID currentUserId(Authentication authentication) {
-        if (authentication != null && authentication.getPrincipal() instanceof UUID userId) {
-            return userId;
-        }
-        throw new ApiException(ErrorCode.UNAUTHENTICATED);
-    }
 }
