@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { messageFor, problemOf } from '../../api/problem'
 import { Button } from '../../components/ui/Button'
 import { Field } from '../../components/ui/Field'
+import { useAfterAuthRedirect } from '../../auth/useAfterAuthRedirect'
 import { useAuth } from '../../auth/useAuth'
 import { registerSchema, type RegisterValues } from './schemas'
 import { AuthLayout } from './AuthLayout'
@@ -12,6 +13,8 @@ import { AuthLayout } from './AuthLayout'
 export function RegisterPage() {
   const { register: createAccount } = useAuth()
   const navigate = useNavigate()
+  // Following an invite link lands here; signing in has to go back to it.
+  const redirectTo = useAfterAuthRedirect()
   const [formError, setFormError] = useState<string | null>(null)
   const [closed, setClosed] = useState(false)
   const {
@@ -24,7 +27,7 @@ export function RegisterPage() {
     setFormError(null)
     try {
       await createAccount(values.email, values.name, values.password)
-      navigate('/', { replace: true })
+      navigate(redirectTo, { replace: true })
     } catch (error) {
       // Registration is flag-gated until email verification ships (ADR-013, SL-901), so a
       // 403 here is expected configuration rather than a fault. Say so plainly instead of
