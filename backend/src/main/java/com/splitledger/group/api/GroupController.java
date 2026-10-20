@@ -4,12 +4,14 @@ import com.splitledger.common.web.AuthenticatedUser;
 import com.splitledger.group.api.dto.CreateGroupRequest;
 import com.splitledger.group.api.dto.GroupDetailResponse;
 import com.splitledger.group.api.dto.GroupSummaryResponse;
+import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.application.GroupService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class GroupController {
 
     private final GroupService groupService;
+    private final GroupMembershipService membershipService;
 
-    GroupController(GroupService groupService) {
+    GroupController(GroupService groupService, GroupMembershipService membershipService) {
         this.groupService = groupService;
+        this.membershipService = membershipService;
     }
 
     @PostMapping
@@ -45,5 +49,17 @@ public class GroupController {
     public GroupDetailResponse detail(Authentication authentication,
             @PathVariable UUID groupId) {
         return groupService.detail(groupId, AuthenticatedUser.require(authentication));
+    }
+
+    /**
+     * Remove a member, or leave the group by naming yourself. One endpoint for both,
+     * because the checks are identical: owing money is no less a problem when you are the
+     * one walking away.
+     */
+    @DeleteMapping("/{groupId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeMember(Authentication authentication, @PathVariable UUID groupId,
+            @PathVariable UUID userId) {
+        membershipService.remove(groupId, AuthenticatedUser.require(authentication), userId);
     }
 }
