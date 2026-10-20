@@ -8,6 +8,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /** Maps expense_groups from V1__init.sql. */
 @Entity
@@ -24,6 +26,14 @@ public class ExpenseGroup {
     @Column(name = "name", nullable = false, length = 100)
     private String name;
 
+    /**
+     * The column is CHAR(3), not VARCHAR(3). Without this the entity maps to varchar and
+     * Hibernate's schema validation rejects the mismatch -- which is the validation doing
+     * its job. V1__init.sql is already applied to the dev database, so the migration is
+     * fixed and the mapping moves: a forward-only migration cannot be edited after it has
+     * run without breaking Flyway's checksum.
+     */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
