@@ -94,6 +94,13 @@ app:
     # Short on purpose: there is no revocation list, so this is the window in which a
     # stolen access token stays usable (ADR-011).
     access-ttl: PT15M
+  invites:
+    # A week: long enough to be passed on and acted upon, short enough that a link
+    # forwarded into some group chat stops working.
+    ttl: ${INVITE_TTL:P7D}
+    # Points at the frontend, not the API -- the token is redeemed from a page. Must match
+    # where the app is actually served, or every invite link will 404.
+    base-url: ${INVITE_BASE_URL:http://localhost:5173}
   auth:
     refresh-ttl: P7D
     # Off locally so the cookie works over plain HTTP; forced on in prod below.
@@ -110,6 +117,17 @@ app:
       register:
         capacity: 5
         per: PT1H
+      # Keyed by admin id, not IP. An invitation puts mail in someone else's inbox, so
+      # the cap is about not making this a spam relay; 20 an hour is far more than
+      # filling in a real group and far less than a useful blast.
+      invite-create:
+        capacity: 20
+        per: PT1H
+      # The only unauthenticated invite endpoint. The token is 256 bits so guessing is
+      # hopeless, but an uncapped public lookup is free to script against.
+      invite-lookup:
+        capacity: 30
+        per: PT1M
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
   registration-enabled: ${REGISTRATION_ENABLED:false}
   payments:
