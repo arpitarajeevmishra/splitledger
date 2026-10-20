@@ -105,9 +105,13 @@ class AuthFlowIT {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 
-        // --- and accepts the access token: anything but 401 means the filter authenticated ---
+        // --- and accepts the access token ---
+        // This asserted 404 when /groups did not exist yet, using "route missing" as a
+        // proxy for "authentication passed". SL-201 created the route and the test broke.
+        // Asserting the real response instead: an authenticated new user has no groups.
         mockMvc.perform(get("/api/v1/groups").header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
 
         // --- refresh rotates the cookie ---
         MvcResult refreshed = mockMvc.perform(post("/api/v1/auth/refresh")
