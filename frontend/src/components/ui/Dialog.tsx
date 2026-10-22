@@ -25,6 +25,15 @@ export function Dialog({
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusTo = useRef<HTMLElement | null>(null)
 
+  // Held in a ref so the effect below depends on `open` alone. Callers define onClose in
+  // their component body, so it is a new function on every render -- and with controlled
+  // inputs that is every keystroke. Depending on it re-ran this effect mid-typing and
+  // threw focus back to the first field after one character.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
   useEffect(() => {
     if (!open) {
       return
@@ -40,7 +49,7 @@ export function Dialog({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        onCloseRef.current()
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -48,7 +57,7 @@ export function Dialog({
       document.removeEventListener('keydown', onKeyDown)
       returnFocusTo.current?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) {
     return null
