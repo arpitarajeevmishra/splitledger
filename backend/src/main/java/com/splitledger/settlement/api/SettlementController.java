@@ -74,6 +74,19 @@ public class SettlementController {
     }
 
     /**
+     * Start taking payment through the provider for this settlement's method.
+     *
+     * <p>Idempotent by state: asking twice returns the order that already exists rather
+     * than creating a second one against the same debt.
+     */
+    @PostMapping("/settlements/{settlementId}/gateway-order")
+    public SettlementResponse createOrder(Authentication authentication,
+            @PathVariable UUID settlementId) {
+        return SettlementResponse.of(settlements.createProviderOrder(settlementId,
+                AuthenticatedUser.require(authentication)));
+    }
+
+    /**
      * The payer says they have sent the money.
      *
      * <p>For cash and UPI intent only in practice: a gateway settlement moves to pending

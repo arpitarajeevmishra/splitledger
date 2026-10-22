@@ -146,6 +146,16 @@ app:
     # The only method that can reach a real bank account. Off wherever data is
     # fictional, which is everywhere in this product (ADR-013).
     upi-intent-enabled: ${PAYMENTS_UPI_INTENT_ENABLED:false}
+    sandbox:
+      # The demo's stand-in gateway. On by default: without it nothing in this product
+      # can be settled through a gateway path at all, which is the one thing a reviewer
+      # will want to see working (finding B4).
+      auto-confirm-enabled: ${SANDBOX_AUTO_CONFIRM:true}
+      # Long enough that PENDING is a state someone actually sees, short enough that a
+      # demo does not stall waiting for it.
+      auto-confirm-delay: ${SANDBOX_AUTO_CONFIRM_DELAY:PT10S}
+    # How often settlement asks polling providers whether their orders went through.
+    poll-cron: ${PAYMENTS_POLL_CRON:*/5 * * * * *}
 
 ---
 # Publishing the full surface of a money API to the internet buys nothing

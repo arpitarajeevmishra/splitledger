@@ -1,12 +1,16 @@
 package com.splitledger.settlement.api.dto;
 
 import com.splitledger.settlement.domain.Settlement;
-import com.splitledger.settlement.domain.SettlementMethod;
+import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.settlement.domain.SettlementStatus;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
+ * @param gatewayOrderId the provider's reference, so a client can tell an order that
+ *     exists from one that does not, and correlate a support question with a provider
+ *     dashboard. Not a secret: it identifies an order, it does not authorise anything
+ * @param gatewayPaymentId set once the provider reports the money moved
  * @param expiresAt when this stops being actionable, so a client can show a countdown
  *     rather than letting someone discover it expired by trying
  * @param demoOnly true for every method that cannot move real money, so the UI can label
@@ -18,8 +22,10 @@ public record SettlementResponse(
         UUID fromUser,
         UUID toUser,
         long amountPaise,
-        SettlementMethod method,
+        PaymentMethod method,
         SettlementStatus status,
+        String gatewayOrderId,
+        String gatewayPaymentId,
         Instant expiresAt,
         Instant createdAt,
         Instant confirmedAt,
@@ -35,6 +41,8 @@ public record SettlementResponse(
                 settlement.amountPaise(),
                 settlement.method(),
                 settlement.status(),
+                settlement.gatewayOrderId(),
+                settlement.gatewayPaymentId(),
                 settlement.expiresAt(),
                 settlement.createdAt(),
                 settlement.confirmedAt(),

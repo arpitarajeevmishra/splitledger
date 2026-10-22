@@ -1,9 +1,14 @@
-package com.splitledger.settlement.domain;
+package com.splitledger.common.payment;
 
 import java.time.Duration;
 
 /**
- * How a settlement is paid, and how long it may sit unanswered.
+ * How a payment is made, and how long it may sit unanswered.
+ *
+ * <p>In {@code common} rather than in either feature, because the settlement module and
+ * the payment module both need to name these and neither may depend on the other --
+ * ArchUnit catches that cycle, and it is right to. Shared vocabulary with no behaviour
+ * of its own belongs where both can see it, next to Money.
  *
  * <p>The TTLs differ because the thing being waited on differs. A checkout session is a
  * browser tab someone either finishes or abandons within minutes; a cash handover waits on
@@ -11,7 +16,7 @@ import java.time.Duration;
  * would either pin a debt behind an abandoned tab or expire a real payment someone was
  * still arranging.
  */
-public enum SettlementMethod {
+public enum PaymentMethod {
 
     /** A checkout session: abandoned carts must not pin a debt (LLD 7.1). */
     RAZORPAY(Duration.ofMinutes(15), true),
@@ -27,7 +32,7 @@ public enum SettlementMethod {
     private final Duration ttl;
     private final boolean gateway;
 
-    SettlementMethod(Duration ttl, boolean gateway) {
+    PaymentMethod(Duration ttl, boolean gateway) {
         this.ttl = ttl;
         this.gateway = gateway;
     }

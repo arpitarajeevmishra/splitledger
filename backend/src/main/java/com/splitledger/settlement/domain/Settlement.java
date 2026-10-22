@@ -1,5 +1,6 @@
 package com.splitledger.settlement.domain;
 
+import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
 import jakarta.persistence.Column;
@@ -53,7 +54,7 @@ public class Settlement {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "method", nullable = false, updatable = false, length = 12)
-    private SettlementMethod method;
+    private PaymentMethod method;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 12)
@@ -83,7 +84,7 @@ public class Settlement {
     }
 
     private Settlement(UUID id, UUID groupId, UUID fromUser, UUID toUser, long amountPaise,
-            SettlementMethod method, Instant createdAt, Instant expiresAt) {
+            PaymentMethod method, Instant createdAt, Instant expiresAt) {
         this.id = id;
         this.groupId = groupId;
         this.fromUser = fromUser;
@@ -97,7 +98,7 @@ public class Settlement {
 
     /** The expiry deadline is fixed at creation, from the method's own TTL (finding C17). */
     public static Settlement initiate(UUID groupId, UUID fromUser, UUID toUser, long amountPaise,
-            SettlementMethod method, Instant now) {
+            PaymentMethod method, Instant now) {
         if (fromUser.equals(toUser)) {
             // The database forbids it too; catching it here gives a readable error rather
             // than a constraint violation.
@@ -208,7 +209,7 @@ public class Settlement {
         return amountPaise;
     }
 
-    public SettlementMethod method() {
+    public PaymentMethod method() {
         return method;
     }
 
