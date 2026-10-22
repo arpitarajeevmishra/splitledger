@@ -21,10 +21,17 @@ const STATUS_STYLE: Record<SettlementStatus, string> = {
   EXPIRED: 'text-ink-dim',
 }
 
+/**
+ * D5: a confirmed payment says no funds moved, not "payment successful".
+ *
+ * <p>"Settled" is true of the ledger and says nothing about the bank. Someone reading it
+ * on a screen that looks like a payment screen can reasonably conclude money left their
+ * account, and the one thing this product must never do is let somebody believe that.
+ */
 const STATUS_LABEL: Record<SettlementStatus, string> = {
   INITIATED: 'not sent yet',
   PENDING: 'waiting to be confirmed',
-  CONFIRMED: 'settled',
+  CONFIRMED: 'simulated payment — no funds were transferred',
   FAILED: 'rejected',
   CANCELLED: 'cancelled',
   EXPIRED: 'expired',

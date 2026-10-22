@@ -82,10 +82,18 @@ export function RegisterPage() {
             {...register('password')}
           />
           {formError !== null && (
-            <p role="alert" className="rounded border border-negative/40 bg-negative/10 px-3 py-2 text-xs text-negative">
+            <p
+              role="alert"
+              className="rounded border border-negative/40 bg-negative/10 px-3 py-2 text-xs text-negative"
+            >
               {formError}
             </p>
           )}
+          {/* D2, above the button rather than below it: a warning someone reads after
+            deciding is a warning that changed nothing. */}
+          <p className="rounded border border-line bg-surface-2 px-3 py-2 text-xs text-ink-muted">
+            This is a portfolio demo. Please don&rsquo;t enter real financial information.
+          </p>
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Creating…' : 'Create account'}
           </Button>

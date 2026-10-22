@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useAppConfig } from '../../api/config'
 import { messageFor } from '../../api/problem'
 import type { GroupDetail, PaymentMethod, SuggestedTransfer } from '../../api/types'
 import { Button } from '../../components/ui/Button'
@@ -30,6 +31,7 @@ export function SettleUpDialog({
 }) {
   const create = useCreateSettlement(group.id)
   const startOrder = useStartOrder(group.id)
+  const { upiIntentEnabled: upiEnabled } = useAppConfig()
 
   const others = useMemo(
     () => group.members.filter((member) => member.userId !== youId),
@@ -43,10 +45,19 @@ export function SettleUpDialog({
   const [method, setMethod] = useState<PaymentMethod>('CASH')
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Only methods this deployment would actually accept. UPI is absent rather than
+  // disabled when the server has it off: it is the one method that could reach a real
+  // bank account against balances that are fiction (ADR-013, risk R9), and an option
+  // nobody can choose is still an option somebody can be confused by.
+  const available = useMemo(
+    () => PAYMENT_METHODS.filter((option) => option.method !== 'UPI_INTENT' || upiEnabled),
+    [upiEnabled],
+  )
+
   const parsed = safeParsePaise(amount)
   const amountPaise = 'paise' in parsed ? parsed.paise : 0
   const amountError = amount === '' ? null : 'error' in parsed ? parsed.error : null
-  const chosen = PAYMENT_METHODS.find((candidate) => candidate.method === method)
+  const chosen = available.find((candidate) => candidate.method === method)
   const submittable = toUser !== '' && amountPaise > 0 && chosen?.unavailable == null
 
   function close() {
@@ -79,6 +90,11 @@ export function SettleUpDialog({
       title="Settle up"
       description="Records a payment. Nobody is charged — every figure here is made up."
     >
+      {/* D3: a badge on the payment surface itself. The page banner says the product is
+          a demo; this says it about the screen someone is about to pay on. */}
+      <p className="mb-4 inline-block rounded border border-info/40 bg-info/10 px-2 py-1 font-mono text-[10px] tracking-[0.06em] text-info uppercase">
+        Test mode
+      </p>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label
@@ -114,7 +130,7 @@ export function SettleUpDialog({
         <fieldset className="flex flex-col gap-2">
           <legend className="text-[13px] font-medium tracking-[0.01em] text-ink-muted">How</legend>
           <div className="flex flex-col gap-2">
-            {PAYMENT_METHODS.map((option) => {
+            {available.map((option) => {
               const disabled = option.unavailable !== null
               return (
                 <label

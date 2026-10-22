@@ -64,6 +64,9 @@ public class SecurityConfig {
                         // invitation is for before asking anyone to sign in. Preview only
                         // -- accept and decline fall through to authenticated below.
                         .requestMatchers(HttpMethod.GET, "/api/v1/invites/*").permitAll()
+                        // The sign-up page must know whether registration is open
+                        // before anyone has an account to ask with.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/config").permitAll()
                         .requestMatchers("/api/v1/health-check").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // Signature-verified, never under JWT, never under /api/v1. LLD 7.4.
