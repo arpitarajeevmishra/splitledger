@@ -261,6 +261,10 @@ class ExpenseServiceTest {
         ExpenseService.Recorded recorded = dinner();
         when(expenses.findById(recorded.expense().id()))
                 .thenReturn(Optional.of(recorded.expense()));
+        // The group is read first, without loading the expense, so the lock can be taken
+        // before the version is looked at.
+        when(expenses.findGroupIdById(recorded.expense().id()))
+                .thenReturn(Optional.of(groupId));
         return recorded.expense();
     }
 
@@ -358,6 +362,7 @@ class ExpenseServiceTest {
 
     @Test
     void voidingSomethingThatDoesNotExistIsA404() {
+        when(expenses.findGroupIdById(any())).thenReturn(Optional.empty());
         when(expenses.findById(any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.voidExpense(UUID.randomUUID(), alice, 0L))
