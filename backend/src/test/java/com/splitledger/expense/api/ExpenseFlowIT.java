@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.splitledger.TestcontainersConfiguration;
 import com.splitledger.expense.application.ExpenseService;
+import com.splitledger.expense.domain.SplitCalculator;
 import com.splitledger.expense.domain.SplitType;
 import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.domain.Role;
@@ -16,6 +17,7 @@ import com.splitledger.ledger.application.LedgerService;
 import com.splitledger.ledger.domain.LedgerPosting;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -223,9 +225,15 @@ class ExpenseFlowIT {
 
         List<LedgerPosting> postings = ledger.postingsFor(groupId);
         assertThat(postings.stream().mapToLong(p -> p.amount().paise()).sum()).isZero();
-        // 10,001 split two ways is 5,001 and 5,000 -- an odd amount on purpose, so a lost
-        // update would show up as a net that is not a clean multiple.
-        assertThat(netFor(groupId, alice.id())).isEqualTo(writers * 5_000L);
-        assertThat(netFor(groupId, bob.id())).isEqualTo(-writers * 5_000L);
+
+        // 10,001 split two ways is 5,001 and 5,000, and which of them gets the odd paisa
+        // is decided by whose user id sorts lower -- random here, since the ids come from
+        // registration. So the expectation is derived from the same deterministic
+        // allocation rather than assumed: asserting that Alice gets 5,000 would have been
+        // a test that passes about half the time.
+        var share = SplitCalculator.equalSplit(10_001L, Set.of(alice.id(), bob.id()));
+        assertThat(netFor(groupId, alice.id()))
+                .isEqualTo(writers * (10_001L - share.get(alice.id())));
+        assertThat(netFor(groupId, bob.id())).isEqualTo(-writers * share.get(bob.id()));
     }
 }
