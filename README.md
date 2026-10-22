@@ -162,8 +162,37 @@ splitledger/
 │       └── common/     money, errors, idempotency, security, web
 ├── frontend/           React + Vite + TypeScript
 ├── infra/              Compose files, Caddy, Prometheus, k6
+├── deploy/             The production stack: Caddy, compose, server env template, runbook
 └── scripts/            Environment checks, repository bootstrap, operational scripts
 ```
+
+---
+
+## Deployment
+
+The deployed shape is one small Linux box: Caddy terminating TLS in front of the SPA and the API,
+with PostgreSQL managed and off the host. Images are built once by CI, published to GHCR tagged by
+commit SHA, and pulled by the host — nothing is built on a developer machine or on the server.
+
+```bash
+./scripts/deploy.sh ubuntu@<host>            # deploy HEAD
+```
+
+```bash
+./scripts/deploy.sh ubuntu@<host> <sha>      # roll back to any published commit
+```
+
+Because images are tagged by commit and the host holds no state, a rollback is a restart on a
+cached image rather than a rebuild, and destroying the box costs a redeploy and nothing else.
+
+Both images are published for `linux/amd64` and `linux/arm64`, so the host can be an ARM instance.
+**[deploy/README.md](deploy/README.md)** walks through a deployment on Oracle Cloud's
+Always Free tier, which runs this stack at no ongoing cost — including the current free-tier limits,
+the two firewalls that have to agree, and the idle-reclamation rule worth sizing around.
+
+Scale-to-zero platforms are a poor fit regardless of price: the settlement expiry sweeper, the
+provider payment poller, the idempotency purge and the nightly reconciliation job all run
+`@Scheduled` inside the API process, and a host that sleeps when idle does not run them.
 
 ---
 

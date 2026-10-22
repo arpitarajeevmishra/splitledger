@@ -1,7 +1,10 @@
 # The built app is static files; nginx serves them. No Node in the runtime image -- a
 # production web server has no reason to carry a package manager and a toolchain.
 
-FROM node:24-alpine AS build
+# Built on the runner's own architecture: `npm run build` emits static files that are the
+# same bytes everywhere, so there is nothing for an emulated arm64 build stage to do but
+# take longer. The nginx runtime stage below is what varies per architecture.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
