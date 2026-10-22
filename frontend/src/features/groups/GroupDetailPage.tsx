@@ -7,6 +7,7 @@ import { formatDate } from '../../lib/format'
 import { BalancesPanel } from '../expenses/BalancesPanel'
 import { ExpenseList } from '../expenses/ExpenseList'
 import { InvitesPanel } from './InvitesPanel'
+import { SettlementsPanel } from '../settlements/SettlementsPanel'
 import { MembersPanel } from './MembersPanel'
 import { useGroup } from './useGroups'
 
@@ -55,7 +56,8 @@ export function GroupDetailPage() {
 
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <ExpenseList group={group} />
-              <BalancesPanel group={group} />
+              <BalancesPanel group={group} youId={user?.id} />
+              <SettlementsPanel group={group} youId={user?.id} />
               <MembersPanel group={group} youId={user?.id} />
               {/* Listing invites is an admin action on the server; asking as a member
                   would be a 403, so a member is not shown the panel at all. */}

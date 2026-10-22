@@ -1,11 +1,19 @@
+import { useState } from 'react'
 import { messageFor } from '../../api/problem'
 import type { GroupDetail } from '../../api/types'
+import { Button } from '../../components/ui/Button'
 import { formatPaise } from '../../lib/money'
+import { SettleUpDialog } from '../settlements/SettleUpDialog'
 import { useBalances, useSimplifiedPlan } from './useExpenses'
 
-export function BalancesPanel({ group }: { group: GroupDetail }) {
+export function BalancesPanel({ group, youId }: { group: GroupDetail; youId: string | undefined }) {
   const { data: balances, isPending, isError, error } = useBalances(group.id)
   const { data: plan } = useSimplifiedPlan(group.id)
+  const [settling, setSettling] = useState(false)
+
+  // The plan's suggestion for you, if it has one. Pre-filling it is the difference
+  // between "what should I pay" being answered and being retyped.
+  const yours = plan?.transfers.find((transfer) => transfer.from === youId)
 
   const nameOf = (userId: string) =>
     group.members.find((member) => member.userId === userId)?.name ?? 'Someone'
@@ -80,9 +88,28 @@ export function BalancesPanel({ group }: { group: GroupDetail }) {
                 The fewest payments that settle everyone &mdash; which may not match who paid for
                 what.
               </p>
+              {yours !== undefined && (
+                <Button className="mt-3" onClick={() => setSettling(true)}>
+                  Settle up
+                </Button>
+              )}
             </>
           )}
         </div>
+      )}
+
+      {/* Mounted only while open, so its fields initialise from the plan as it stands
+          now. Keeping it mounted meant useState ran once on first render -- before the
+          plan had loaded -- and the suggested amount was captured as undefined and never
+          picked up again. It also means the form starts clean each time. */}
+      {settling && (
+        <SettleUpDialog
+          group={group}
+          youId={youId}
+          suggestion={yours}
+          open
+          onClose={() => setSettling(false)}
+        />
       )}
     </section>
   )
