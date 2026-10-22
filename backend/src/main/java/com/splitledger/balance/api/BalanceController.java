@@ -1,6 +1,7 @@
 package com.splitledger.balance.api;
 
 import com.splitledger.balance.api.dto.BalancesResponse;
+import com.splitledger.balance.api.dto.SimplifiedPlanResponse;
 import com.splitledger.balance.application.BalanceService;
 import com.splitledger.common.web.AuthenticatedUser;
 import java.util.UUID;
@@ -24,5 +25,19 @@ public class BalanceController {
     public BalancesResponse balances(Authentication authentication, @PathVariable UUID groupId) {
         return BalancesResponse.of(
                 balances.of(groupId, AuthenticatedUser.require(authentication)));
+    }
+
+    /**
+     * The fewest payments that settle the group.
+     *
+     * <p>Suggestions, but payable ones: a settlement is validated against net balances
+     * (ADR-010), so a transfer taken straight from this plan is accepted even between two
+     * people who never shared an expense.
+     */
+    @GetMapping("/simplified")
+    public SimplifiedPlanResponse simplified(Authentication authentication,
+            @PathVariable UUID groupId) {
+        return SimplifiedPlanResponse.of(
+                balances.simplified(groupId, AuthenticatedUser.require(authentication)));
     }
 }

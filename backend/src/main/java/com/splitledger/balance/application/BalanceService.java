@@ -2,6 +2,8 @@ package com.splitledger.balance.application;
 
 import com.splitledger.balance.domain.MemberBalance;
 import com.splitledger.balance.domain.PairwiseDebt;
+import com.splitledger.balance.domain.Simplification;
+import com.splitledger.balance.domain.Transfer;
 import com.splitledger.balance.infra.BalanceQueries;
 import com.splitledger.group.application.GroupAccessGuard;
 import com.splitledger.group.domain.GroupMember;
@@ -41,6 +43,24 @@ public class BalanceService {
     public GroupBalances of(UUID groupId, UUID actorId) {
         guard.requireMember(groupId, actorId);
         return new GroupBalances(net(groupId), pairwise(groupId));
+    }
+
+    /**
+     * The fewest payments that would settle the group.
+     *
+     * <p>Computed from the net positions, not from who owes whom: that is what lets a
+     * three-way circle of debts collapse into one payment, and why a settlement is
+     * validated against net balances rather than pairwise debt (ADR-010).
+     */
+    @Transactional(readOnly = true)
+    public List<Transfer> simplified(UUID groupId, UUID actorId) {
+        guard.requireMember(groupId, actorId);
+
+        Map<UUID, Long> net = new HashMap<>();
+        for (MemberBalance balance : net(groupId)) {
+            net.put(balance.userId(), balance.net().paise());
+        }
+        return Simplification.of(net);
     }
 
     /**

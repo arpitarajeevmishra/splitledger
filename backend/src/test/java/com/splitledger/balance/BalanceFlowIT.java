@@ -3,6 +3,7 @@ package com.splitledger.balance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
@@ -11,6 +12,7 @@ import com.splitledger.balance.application.BalanceService;
 import com.splitledger.balance.application.GroupBalances;
 import com.splitledger.balance.domain.MemberBalance;
 import com.splitledger.balance.domain.PairwiseDebt;
+import com.splitledger.balance.domain.Transfer;
 import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.domain.Role;
 import java.util.HashMap;
@@ -211,6 +213,80 @@ class BalanceFlowIT {
         assertThat((int) JsonPath.read(body, "$.net.length()")).isEqualTo(2);
         assertThat((int) JsonPath.read(body, "$.pairwise.length()")).isEqualTo(1);
         assertThat((int) JsonPath.read(body, "$.pairwise[0].amountPaise")).isEqualTo(5_000);
+    }
+
+    @Test
+    void aCircleOfDebtsCollapsesIntoFewerPayments() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        Account carol = newUser("Carol");
+        UUID groupId = newGroup(alice, "Circle");
+        membership.joinOrRejoin(groupId, bob.id(), Role.MEMBER);
+        membership.joinOrRejoin(groupId, carol.id(), Role.MEMBER);
+
+        // A pays for A+B, B pays for B+C, C pays for C+A: everyone owes someone, and
+        // pairwise there are three debts going round in a circle.
+        expense(alice, groupId, 30_000L, List.of(alice.id(), bob.id()));
+        expense(bob, groupId, 30_000L, List.of(bob.id(), carol.id()));
+        expense(carol, groupId, 30_000L, List.of(carol.id(), alice.id()));
+
+        GroupBalances before = balances.of(groupId, alice.id());
+        assertThat(before.net()).allMatch(MemberBalance::isSettled);
+
+        // Everyone paid the same and consumed the same, so the circle cancels entirely
+        // and the plan is empty -- which pairwise debts alone would never tell you.
+        assertThat(balances.simplified(groupId, alice.id())).isEmpty();
+    }
+
+    @Test
+    void theSimplifiedPlanSettlesEveryoneWhenApplied() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        Account carol = newUser("Carol");
+        UUID groupId = newGroup(alice, "Trip");
+        membership.joinOrRejoin(groupId, bob.id(), Role.MEMBER);
+        membership.joinOrRejoin(groupId, carol.id(), Role.MEMBER);
+
+        expense(alice, groupId, 90_001L, List.of(alice.id(), bob.id(), carol.id()));
+        expense(bob, groupId, 15_000L, List.of(alice.id(), bob.id()));
+
+        Map<UUID, Long> after = new HashMap<>();
+        balances.of(groupId, alice.id()).net()
+                .forEach(balance -> after.put(balance.userId(), balance.net().paise()));
+        List<Transfer> plan = balances.simplified(groupId, alice.id());
+
+        for (Transfer transfer : plan) {
+            after.merge(transfer.from(), transfer.amount().paise(), Long::sum);
+            after.merge(transfer.to(), -transfer.amount().paise(), Long::sum);
+        }
+        assertThat(after.values()).allSatisfy(balance -> assertThat(balance).isZero());
+        // Three people, so at most two payments.
+        assertThat(plan).hasSizeLessThanOrEqualTo(2);
+    }
+
+    @Test
+    void theSimplifiedEndpointSaysWhenNobodyOwesAnything() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        UUID groupId = newGroup(alice, "Quiet");
+        membership.joinOrRejoin(groupId, bob.id(), Role.MEMBER);
+
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/balances/simplified")
+                        .header("Authorization", "Bearer " + bob.token()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"settled\":true")));
+    }
+
+    @Test
+    void aNonMemberCannotReadTheSimplifiedPlan() throws Exception {
+        Account alice = newUser("Alice");
+        Account mallory = newUser("Mallory");
+        UUID groupId = newGroup(alice, "Private");
+
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/balances/simplified")
+                        .header("Authorization", "Bearer " + mallory.token()))
+                .andExpect(status().isNotFound());
     }
 
     @Test
