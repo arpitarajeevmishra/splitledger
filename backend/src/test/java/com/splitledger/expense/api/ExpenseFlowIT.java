@@ -194,6 +194,135 @@ class ExpenseFlowIT {
                 .andExpect(jsonPath("$.length()").value(1));
     }
 
+    @Test
+    void aRetryWithTheSameKeyCreatesOneExpenseAndReturnsTheFirstResponse() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        UUID groupId = newGroup(alice, "Flat 402");
+        membership.joinOrRejoin(groupId, bob.id(), Role.MEMBER);
+        String key = UUID.randomUUID().toString();
+        String body = equalSplitBody(alice.id(), 90_000L, List.of(alice.id(), bob.id()));
+
+        String first = mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        // Same key, same body: the stored response, and still 201 rather than a 200 the
+        // client never expected.
+        String replayed = mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat((String) JsonPath.read(replayed, "$.id"))
+                .isEqualTo(JsonPath.read(first, "$.id"));
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(jsonPath("$.length()").value(1));
+        // And only one ledger transaction, which is the part that would corrupt balances.
+        assertThat(ledger.postingsFor(groupId)).hasSize(3);
+    }
+
+    @Test
+    void theSameKeyWithADifferentBodyIsRejectedWith422() throws Exception {
+        Account alice = newUser("Alice");
+        UUID groupId = newGroup(alice, "Flat 402");
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(equalSplitBody(alice.id(), 90_000L, List.of(alice.id()))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(equalSplitBody(alice.id(), 20_000L, List.of(alice.id()))))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void keysAreScopedPerUserSoTwoPeopleMayPickTheSameOne() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        UUID groupId = newGroup(alice, "Flat 402");
+        membership.joinOrRejoin(groupId, bob.id(), Role.MEMBER);
+        String sharedKey = "the-same-key";
+
+        for (Account who : List.of(alice, bob)) {
+            mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                            .header("Authorization", "Bearer " + who.token())
+                            .header("Idempotency-Key", sharedKey)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(equalSplitBody(who.id(), 10_000L,
+                                    List.of(alice.id(), bob.id()))))
+                    .andExpect(status().isCreated());
+        }
+
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void aFailedRequestReleasesItsKeyForImmediateRetry() throws Exception {
+        Account alice = newUser("Alice");
+        Account mallory = newUser("Mallory");
+        UUID groupId = newGroup(alice, "Flat 402");
+        String key = UUID.randomUUID().toString();
+
+        // Fails validation: Mallory is not in this group.
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(equalSplitBody(alice.id(), 90_000L,
+                                List.of(alice.id(), mallory.id()))))
+                .andExpect(status().isUnprocessableEntity());
+
+        // The same key must work immediately afterwards -- being locked out of your own
+        // key for ten minutes because of a typo would be its own bug.
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token())
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(equalSplitBody(alice.id(), 90_000L, List.of(alice.id()))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void withoutAKeyARetryCreatesASecondExpense() throws Exception {
+        Account alice = newUser("Alice");
+        UUID groupId = newGroup(alice, "Flat 402");
+        String body = equalSplitBody(alice.id(), 90_000L, List.of(alice.id()));
+
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                            .header("Authorization", "Bearer " + alice.token())
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isCreated());
+        }
+
+        // Documenting the honest default rather than implying the endpoint is safe
+        // without the header.
+        mockMvc.perform(get("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
     /**
      * ADR-004 claims writes in one group serialise, and says the guarantee should be
      * provable rather than asserted. Twenty expenses are recorded at once through the
