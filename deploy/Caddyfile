@@ -1,0 +1,51 @@
+# TLS is automatic: Caddy obtains and renews a certificate over ACME, so there is no
+# certbot cron to forget about and no expiry to be surprised by.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The SPA and the API share an origin, which is what lets the refresh cookie be
+	# SameSite=Strict (ADR-011) and what lets one image run everywhere (C13).
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Razorpay posts here. Deliberately outside /api/v1 and unauthenticated -- the
+	# signature is what authorises it, not a session (S7).
+	handle /webhooks/* {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+
+	header {
+		# A year, and only once the deployment is known good: browsers remember this and
+		# there is no quick way to take it back.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# No camera, microphone or location: this app asks for none of them, and saying so
+		# means a compromised dependency cannot either.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+
+		# Vite emits hashed scripts and no inline ones, so script-src needs no
+		# 'unsafe-inline'. Styles do: Tailwind sets a few inline, and a nonce would mean
+		# rendering the page through a template engine this app does not have.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+		# Set by nginx and Caddy both; removed so the stack does not announce itself.
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

@@ -1,0 +1,11 @@
+# Everything the build does not need, and some things it must not have.
+target/
+.jqwik-database
+*.log
+
+# Never. The image would carry the database password and the JWT signing key, readable by
+# anyone who can pull it.
+.env
+*.env
+**/*.pem
+**/*.key
