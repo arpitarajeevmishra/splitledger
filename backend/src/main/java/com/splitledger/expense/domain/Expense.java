@@ -70,6 +70,12 @@ public class Expense {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "voided_at")
+    private Instant voidedAt;
+
+    @Column(name = "voided_by")
+    private UUID voidedBy;
+
     @Version
     @Column(name = "version", nullable = false)
     private long version;
@@ -121,8 +127,17 @@ public class Expense {
         return status == ExpenseStatus.ACTIVE;
     }
 
-    public void voidIt() {
+    /**
+     * Void this expense, recording who did it and when.
+     *
+     * <p>The actor is taken rather than assumed from {@code createdBy}: anyone in the
+     * group may void an expense, and a feed that named the wrong person would be worse
+     * than one that said nothing.
+     */
+    public void voidIt(UUID actorId, Instant now) {
         this.status = ExpenseStatus.VOIDED;
+        this.voidedAt = now;
+        this.voidedBy = actorId;
     }
 
     public UUID id() {
@@ -171,6 +186,14 @@ public class Expense {
 
     public Instant createdAt() {
         return createdAt;
+    }
+
+    public Instant voidedAt() {
+        return voidedAt;
+    }
+
+    public UUID voidedBy() {
+        return voidedBy;
     }
 
     public long version() {
