@@ -46,6 +46,19 @@ public class BalanceService {
     }
 
     /**
+     * Net positions only, for callers that authorise against them.
+     *
+     * <p>Separate from {@link #of} because settlement validation needs the net figures and
+     * nothing else; computing the pairwise view as well would be a second query to answer
+     * a question nobody asked.
+     */
+    @Transactional(readOnly = true)
+    public List<MemberBalance> netOnly(UUID groupId, UUID actorId) {
+        guard.requireMember(groupId, actorId);
+        return net(groupId);
+    }
+
+    /**
      * The fewest payments that would settle the group.
      *
      * <p>Computed from the net positions, not from who owes whom: that is what lets a
