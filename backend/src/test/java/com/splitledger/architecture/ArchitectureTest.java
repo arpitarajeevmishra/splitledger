@@ -36,8 +36,15 @@ class ArchitectureTest {
             ArchRuleDefinition.noClasses()
                     .that().resideInAPackage("..common..")
                     .should().dependOnClassesThat()
-                    .resideInAnyPackage("..identity..", "..group..", "..expense..", "..ledger..",
-                            "..settlement..", "..payment..", "..notification..", "..outbox..")
+                    // Anchored at com.splitledger rather than written as "..payment..":
+                    // the loose form matches any package segment with that name, so a
+                    // shared value type living at common.payment would trip the rule by
+                    // referring to itself. The rule is about the feature modules, and now
+                    // says so.
+                    .resideInAnyPackage("com.splitledger.identity..", "com.splitledger.group..",
+                            "com.splitledger.expense..", "com.splitledger.ledger..",
+                            "com.splitledger.settlement..", "com.splitledger.payment..",
+                            "com.splitledger.notification..", "com.splitledger.outbox..")
                     .because("common is shared plumbing; a dependency on a feature inverts that");
 
     @ArchTest

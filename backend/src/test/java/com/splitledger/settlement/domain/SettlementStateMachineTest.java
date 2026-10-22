@@ -1,5 +1,6 @@
 package com.splitledger.settlement.domain;
 
+import com.splitledger.common.payment.PaymentMethod;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,7 +46,7 @@ class SettlementStateMachineTest {
 
     /** The whole legal set, in one place, as "from --transition--> to". */
     private static boolean isLegal(SettlementStatus from, String transition,
-            SettlementMethod method) {
+            PaymentMethod method) {
         return switch (transition) {
             case "markPending" -> from == SettlementStatus.INITIATED;
             // CONFIRMED is included: confirming twice is a documented no-op, not an error.
@@ -61,7 +62,7 @@ class SettlementStateMachineTest {
         };
     }
 
-    private static Settlement inState(SettlementStatus target, SettlementMethod method) {
+    private static Settlement inState(SettlementStatus target, PaymentMethod method) {
         Settlement settlement = Settlement.initiate(UUID.randomUUID(), UUID.randomUUID(),
                 UUID.randomUUID(), 30_000L, method, NOW);
         switch (target) {
@@ -83,7 +84,7 @@ class SettlementStateMachineTest {
     }
 
     static Stream<Arguments> everyStateAndTransition() {
-        return Stream.of(SettlementMethod.values()).flatMap(method ->
+        return Stream.of(PaymentMethod.values()).flatMap(method ->
                 Stream.of(SettlementStatus.values()).flatMap(status ->
                         TRANSITIONS.stream().map(transition ->
                                 Arguments.of(method, status, transition))));
@@ -92,7 +93,7 @@ class SettlementStateMachineTest {
     @ParameterizedTest(name = "{0}: {1} --{2}-->")
     @MethodSource("everyStateAndTransition")
     @DisplayName("every state against every transition")
-    void theMatrix(SettlementMethod method, SettlementStatus from, Transition transition) {
+    void theMatrix(PaymentMethod method, SettlementStatus from, Transition transition) {
         Settlement settlement = inState(from, method);
 
         if (isLegal(from, transition.name(), method)) {
@@ -112,7 +113,7 @@ class SettlementStateMachineTest {
 
     @Test
     void confirmingTwiceSucceedsAndChangesNothing() {
-        Settlement settlement = inState(SettlementStatus.CONFIRMED, SettlementMethod.CASH);
+        Settlement settlement = inState(SettlementStatus.CONFIRMED, PaymentMethod.CASH);
         Instant firstConfirm = settlement.confirmedAt();
 
         settlement.confirm(NOW.plusSeconds(60));
@@ -125,7 +126,7 @@ class SettlementStateMachineTest {
 
     @Test
     void aLateCaptureStillConfirmsAnExpiredSettlement() {
-        Settlement settlement = inState(SettlementStatus.EXPIRED, SettlementMethod.RAZORPAY);
+        Settlement settlement = inState(SettlementStatus.EXPIRED, PaymentMethod.RAZORPAY);
 
         settlement.confirm(NOW.plusSeconds(60));
 
@@ -136,7 +137,7 @@ class SettlementStateMachineTest {
 
     @Test
     void aGatewayPaymentCannotBeCancelledOnceAnOrderExists() {
-        Settlement settlement = inState(SettlementStatus.PENDING, SettlementMethod.RAZORPAY);
+        Settlement settlement = inState(SettlementStatus.PENDING, PaymentMethod.RAZORPAY);
 
         assertThatThrownBy(() -> settlement.cancel(NOW))
                 .isInstanceOf(ApiException.class)
@@ -146,7 +147,7 @@ class SettlementStateMachineTest {
 
     @Test
     void aCashPaymentCanBeCancelledWhileItAwaitsConfirmation() {
-        Settlement settlement = inState(SettlementStatus.PENDING, SettlementMethod.CASH);
+        Settlement settlement = inState(SettlementStatus.PENDING, PaymentMethod.CASH);
 
         settlement.cancel(NOW);
 
@@ -155,7 +156,7 @@ class SettlementStateMachineTest {
 
     @Test
     void anAbandonedSettlementExpiresBeforeAnyOrderExists() {
-        Settlement settlement = inState(SettlementStatus.INITIATED, SettlementMethod.SANDBOX);
+        Settlement settlement = inState(SettlementStatus.INITIATED, PaymentMethod.SANDBOX);
 
         // C17: without this edge it would sit in the list forever.
         settlement.expire(NOW);
@@ -168,9 +169,9 @@ class SettlementStateMachineTest {
     @Test
     void aCheckoutSessionExpiresInMinutesAndAHandshakeInDays() {
         Settlement gateway = Settlement.initiate(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 30_000L, SettlementMethod.RAZORPAY, NOW);
+                UUID.randomUUID(), 30_000L, PaymentMethod.RAZORPAY, NOW);
         Settlement cash = Settlement.initiate(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 30_000L, SettlementMethod.CASH, NOW);
+                UUID.randomUUID(), 30_000L, PaymentMethod.CASH, NOW);
 
         // An abandoned browser tab must not pin a debt; two people meeting up need longer.
         assertThat(gateway.expiresAt()).isEqualTo(NOW.plusSeconds(15 * 60));
@@ -180,7 +181,7 @@ class SettlementStateMachineTest {
     @Test
     void expiryIsInclusiveAtTheDeadline() {
         Settlement settlement = Settlement.initiate(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 30_000L, SettlementMethod.RAZORPAY, NOW);
+                UUID.randomUUID(), 30_000L, PaymentMethod.RAZORPAY, NOW);
 
         assertThat(settlement.hasExpiredBy(NOW.plusSeconds(15 * 60).minusMillis(1))).isFalse();
         assertThat(settlement.hasExpiredBy(NOW.plusSeconds(15 * 60))).isTrue();
@@ -202,7 +203,7 @@ class SettlementStateMachineTest {
         UUID same = UUID.randomUUID();
 
         assertThatThrownBy(() -> Settlement.initiate(UUID.randomUUID(), same, same, 30_000L,
-                SettlementMethod.CASH, NOW))
+                PaymentMethod.CASH, NOW))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.VALIDATION_ERROR);
@@ -211,7 +212,7 @@ class SettlementStateMachineTest {
     @Test
     void aSettlementMustMoveSomething() {
         assertThatThrownBy(() -> Settlement.initiate(UUID.randomUUID(), UUID.randomUUID(),
-                UUID.randomUUID(), 0L, SettlementMethod.CASH, NOW))
+                UUID.randomUUID(), 0L, PaymentMethod.CASH, NOW))
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.AMOUNT_OUT_OF_RANGE);

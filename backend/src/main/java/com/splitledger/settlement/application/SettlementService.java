@@ -11,8 +11,11 @@ import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.infra.GroupMemberRepository;
 import com.splitledger.settlement.domain.Settlement;
 import com.splitledger.ledger.application.LedgerService;
+import com.splitledger.payment.port.PaymentProvider;
+import com.splitledger.payment.port.PaymentRequest;
+import com.splitledger.payment.port.ProviderOrder;
 import com.splitledger.ledger.domain.TransactionType;
-import com.splitledger.settlement.domain.SettlementMethod;
+import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.settlement.domain.SettlementStatus;
 import com.splitledger.settlement.infra.SettlementRepository;
 import java.time.Clock;
@@ -46,25 +49,28 @@ public class SettlementService {
     private final GroupLock groupLock;
     private final BalanceService balances;
     private final LedgerService ledger;
+    private final List<PaymentProvider> providers;
     private final Clock clock;
 
     @Autowired
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
             GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
-            LedgerService ledger) {
-        this(settlements, members, guard, groupLock, balances, ledger, Clock.systemUTC());
+            LedgerService ledger, List<PaymentProvider> providers) {
+        this(settlements, members, guard, groupLock, balances, ledger, providers,
+                Clock.systemUTC());
     }
 
     /** Visible for testing. */
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
             GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
-            LedgerService ledger, Clock clock) {
+            LedgerService ledger, List<PaymentProvider> providers, Clock clock) {
         this.settlements = settlements;
         this.members = members;
         this.guard = guard;
         this.groupLock = groupLock;
         this.balances = balances;
         this.ledger = ledger;
+        this.providers = providers;
         this.clock = clock;
     }
 
@@ -77,7 +83,7 @@ public class SettlementService {
      */
     @Transactional
     public Settlement create(UUID groupId, UUID payerId, UUID payeeId, long amountPaise,
-            SettlementMethod method) {
+            PaymentMethod method) {
         guard.requireMember(groupId, payerId);
         groupLock.acquire(groupId);
 
@@ -154,6 +160,72 @@ public class SettlementService {
 
         settlement.cancel(Instant.now(clock));
         return settlements.save(settlement);
+    }
+
+    /**
+     * Start taking payment through a provider.
+     *
+     * <p>Idempotent by state rather than by key: if an order already exists this returns
+     * it instead of creating a second one. A client that retries after a dropped response
+     * must not end up with two orders against one debt, and the provider's own reference
+     * is the natural thing to key on (LLD 8).
+     */
+    @Transactional
+    public Settlement createProviderOrder(UUID settlementId, UUID actorId) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayer(settlement, actorId, "Only the payer can start this payment");
+
+        if (settlement.gatewayOrderId() != null) {
+            return settlement;
+        }
+        if (!settlement.method().isGateway()) {
+            throw new ApiException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "This payment method has no order to create");
+        }
+
+        ProviderOrder order = providerFor(settlement.method()).initiate(
+                new PaymentRequest(settlement.id(), settlement.amountPaise(), "INR"));
+        settlement.recordGatewayOrder(order.orderId());
+        settlement.markPending(Instant.now(clock));
+        return settlements.save(settlement);
+    }
+
+    /**
+     * Confirmation that came from the provider rather than from the receiver.
+     *
+     * <p>Deliberately skips the payee check that {@link #confirm} enforces: for a gateway
+     * method the provider is the authority on whether money moved, and the receiver has no
+     * say. There is no HTTP route to this -- callers are the sandbox's own scheduler and,
+     * in S7, a webhook handler that has already verified a signature.
+     */
+    @Transactional
+    public Settlement confirmFromProvider(UUID settlementId, String providerPaymentId) {
+        Settlement settlement = settlements.findById(settlementId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such settlement"));
+        groupLock.acquire(settlement.groupId());
+
+        if (settlement.status() == SettlementStatus.CONFIRMED) {
+            return settlement;
+        }
+        requireWithinOutstanding(settlement.groupId(), settlement.fromUser(),
+                settlement.toUser(), settlement.amountPaise());
+
+        settlement.recordGatewayPayment(providerPaymentId);
+        settlement.confirm(Instant.now(clock));
+        settlements.save(settlement);
+
+        ledger.post(settlement.groupId(), TransactionType.SETTLEMENT, settlement.id(), List.of(
+                LedgerService.Line.of(settlement.fromUser(), settlement.amountPaise()),
+                LedgerService.Line.of(settlement.toUser(), -settlement.amountPaise())));
+        return settlement;
+    }
+
+    private PaymentProvider providerFor(PaymentMethod method) {
+        return providers.stream()
+                .filter(provider -> provider.method() == method)
+                .findFirst()
+                .orElseThrow(() -> new ApiException(ErrorCode.GATEWAY_ERROR,
+                        "No provider is configured for " + method));
     }
 
     /**
@@ -245,8 +317,8 @@ public class SettlementService {
         }
     }
 
-    private void requireGatewayMinimum(SettlementMethod method, long amountPaise) {
-        if (method == SettlementMethod.RAZORPAY && amountPaise < GATEWAY_MINIMUM_PAISE) {
+    private void requireGatewayMinimum(PaymentMethod method, long amountPaise) {
+        if (method == PaymentMethod.RAZORPAY && amountPaise < GATEWAY_MINIMUM_PAISE) {
             // Refused here with our own error rather than by an opaque gateway failure
             // several steps later (finding C5).
             throw new ApiException(ErrorCode.SETTLEMENT_BELOW_GATEWAY_MINIMUM,

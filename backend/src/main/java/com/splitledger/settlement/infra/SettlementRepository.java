@@ -1,6 +1,7 @@
 package com.splitledger.settlement.infra;
 
 import com.splitledger.settlement.domain.Settlement;
+import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.settlement.domain.SettlementStatus;
 import java.time.Instant;
 import java.util.Collection;
@@ -22,6 +23,9 @@ public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
      */
     @Query("select s.groupId from Settlement s where s.id = :settlementId")
     Optional<UUID> findGroupIdById(@Param("settlementId") UUID settlementId);
+
+    /** Sandbox settlements waiting for their stand-in gateway to answer. */
+    List<Settlement> findAllByMethodAndStatus(PaymentMethod method, SettlementStatus status);
 
     /** What the sweeper reclaims: anything unfinished whose deadline has passed. */
     List<Settlement> findAllByStatusInAndExpiresAtBefore(Collection<SettlementStatus> statuses,
