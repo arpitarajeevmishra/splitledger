@@ -80,7 +80,8 @@ public class Expense {
 
     private Expense(UUID id, UUID groupId, UUID paidBy, String description, long amountPaise,
             String currency, SplitType splitType, LocalDate expenseDate, UUID createdBy,
-            Instant createdAt) {
+            Instant createdAt, UUID replacesExpenseId) {
+        this.replacesExpenseId = replacesExpenseId;
         this.id = id;
         this.groupId = groupId;
         this.paidBy = paidBy;
@@ -98,7 +99,22 @@ public class Expense {
             String currency, SplitType splitType, LocalDate expenseDate, UUID createdBy,
             Instant now) {
         return new Expense(UUID.randomUUID(), groupId, paidBy, description.trim(), amountPaise,
-                currency, splitType, expenseDate, createdBy, now);
+                currency, splitType, expenseDate, createdBy, now, null);
+    }
+
+    /**
+     * A correction: a new expense that points back at the one it supersedes.
+     *
+     * <p>Nothing about the original is altered -- it is voided and stays where it is. The
+     * chain is what lets anyone ask "what did this used to say", which is the whole reason
+     * an expense is never edited in place.
+     */
+    public static Expense replacing(Expense superseded, UUID paidBy, String description,
+            long amountPaise, SplitType splitType, LocalDate expenseDate, UUID createdBy,
+            Instant now) {
+        return new Expense(UUID.randomUUID(), superseded.groupId(), paidBy, description.trim(),
+                amountPaise, superseded.currency(), splitType, expenseDate, createdBy, now,
+                superseded.id());
     }
 
     public boolean isActive() {

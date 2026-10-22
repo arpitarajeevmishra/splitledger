@@ -8,15 +8,19 @@ import com.splitledger.expense.api.dto.CreateExpenseRequest;
 import com.splitledger.expense.api.dto.ExpenseResponse;
 import com.splitledger.expense.api.dto.ExpenseSummaryResponse;
 import com.splitledger.expense.application.ExpenseService;
+import com.splitledger.expense.domain.Expense;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -92,6 +96,65 @@ public class ExpenseController {
         return expenses.list(groupId, AuthenticatedUser.require(authentication)).stream()
                 .map(ExpenseSummaryResponse::of)
                 .toList();
+    }
+
+    /**
+     * Void an expense. Its postings are reversed, so the group's balances return to
+     * exactly where they were.
+     *
+     * <p>{@code If-Match} carries the version the client last read. One convention for
+     * both this and PUT, rather than a header here and a body field there (finding C8):
+     * two ways of saying the same thing is how one of them ends up unimplemented.
+     */
+    @DeleteMapping("/expenses/{expenseId}")
+    public ExpenseResponse voidExpense(Authentication authentication,
+            @PathVariable UUID expenseId,
+            @RequestHeader(HttpHeaders.IF_MATCH) String ifMatch) {
+        Expense voided = expenses.voidExpense(expenseId,
+                AuthenticatedUser.require(authentication), parseVersion(ifMatch));
+        return ExpenseResponse.of(new ExpenseService.Recorded(voided, List.of()));
+    }
+
+    /**
+     * Replace an expense with a corrected one.
+     *
+     * <p>Returns the <em>new</em> expense; the original is voided and keeps its id, so a
+     * client holding the old one can still fetch it and see what it used to say.
+     */
+    @PutMapping("/expenses/{expenseId}")
+    public ExpenseResponse replace(Authentication authentication, @PathVariable UUID expenseId,
+            @RequestHeader(HttpHeaders.IF_MATCH) String ifMatch,
+            @Valid @RequestBody CreateExpenseRequest request) {
+        List<ExpenseService.Participant> participants = request.participants().stream()
+                .map(input -> new ExpenseService.Participant(input.userId(), input.value()))
+                .toList();
+
+        return ExpenseResponse.of(expenses.replace(expenseId,
+                AuthenticatedUser.require(authentication), parseVersion(ifMatch),
+                request.description(), request.amountPaise(), request.paidBy(),
+                request.expenseDate(), request.splitType(), participants));
+    }
+
+    /**
+     * An ETag is conventionally quoted and may be weak, so {@code "3"} and {@code W/"3"}
+     * are accepted alongside a bare {@code 3}. Anything else is the client's mistake and
+     * is refused rather than guessed at -- treating an unparseable version as 0 would
+     * silently overwrite someone's edit.
+     */
+    private static long parseVersion(String ifMatch) {
+        String value = ifMatch.trim();
+        if (value.startsWith("W/")) {
+            value = value.substring(2).trim();
+        }
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length() - 1);
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
+            throw new ApiException(ErrorCode.VALIDATION_ERROR,
+                    "If-Match must be the version you last read");
+        }
     }
 
     @GetMapping("/expenses/{expenseId}")

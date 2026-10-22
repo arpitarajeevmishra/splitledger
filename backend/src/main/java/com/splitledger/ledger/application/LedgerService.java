@@ -128,6 +128,22 @@ public class LedgerService {
         return write(reversal, mirrored, "That transaction has already been reversed");
     }
 
+    /**
+     * Undo whatever a business fact posted, found by the fact rather than by transaction
+     * id -- the calling module knows its own expense id and should not have to keep the
+     * ledger's.
+     *
+     * <p>Still knows nothing about what the source <em>is</em>: it looks up a row by
+     * (type, source_id) and reverses it.
+     */
+    @Transactional
+    public LedgerTransaction reverseSource(TransactionType type, UUID sourceId) {
+        LedgerTransaction original = transactions.findByTypeAndSourceId(type, sourceId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND,
+                        "Nothing was posted for that source"));
+        return reverse(original.id());
+    }
+
     /** Every posting for a group, for whoever computes balances from them. */
     @Transactional(readOnly = true)
     public List<LedgerPosting> postingsFor(UUID groupId) {
