@@ -126,10 +126,15 @@ public class ExpenseService {
      */
     @Transactional
     public Expense voidExpense(UUID expenseId, UUID actorId, long expectedVersion) {
+        UUID groupId = groupOf(expenseId);
+        guard.requireMember(groupId, actorId);
+        groupLock.acquire(groupId);
+
+        // Loaded only now, inside the lock, so the version it reports is the committed
+        // one. Reading it first and checking afterwards compares against a snapshot taken
+        // before whoever held the lock finished -- which looks current and is not.
         Expense expense = expenses.findById(expenseId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
-        guard.requireMember(expense.groupId(), actorId);
-        groupLock.acquire(expense.groupId());
 
         requireCurrent(expense, expectedVersion);
         requireActive(expense);
@@ -154,11 +159,13 @@ public class ExpenseService {
     public Recorded replace(UUID expenseId, UUID actorId, long expectedVersion,
             String description, long amountPaise, UUID paidBy, LocalDate expenseDate,
             SplitType splitType, List<Participant> participants) {
-        Expense superseded = expenses.findById(expenseId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
-        UUID groupId = superseded.groupId();
+        UUID groupId = groupOf(expenseId);
         guard.requireMember(groupId, actorId);
         groupLock.acquire(groupId);
+
+        // Same ordering as voidExpense, and for the same reason.
+        Expense superseded = expenses.findById(expenseId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
 
         requireCurrent(superseded, expectedVersion);
         requireActive(superseded);
@@ -217,6 +224,17 @@ public class ExpenseService {
         });
         ledger.post(expense.groupId(), TransactionType.EXPENSE, expense.id(), lines);
         return saved;
+    }
+
+    /**
+     * Which group an expense belongs to, without loading the expense.
+     *
+     * <p>The group id is immutable, so reading it before the lock is safe in a way that
+     * reading the version is not.
+     */
+    private UUID groupOf(UUID expenseId) {
+        return expenses.findGroupIdById(expenseId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
     }
 
     private static void requireCurrent(Expense expense, long expectedVersion) {
