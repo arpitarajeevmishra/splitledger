@@ -136,9 +136,13 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report
 
+  # Builds on every branch, pushes only from main. The build is the verification: this
+  # project has no Docker locally (ADR-012), so a Dockerfile that only ever builds after
+  # merge is a Dockerfile nobody has checked. Pushing stays restricted to main -- a
+  # branch should not be able to publish an image that a deploy could pick up.
   build-and-push:
     needs: [detect, backend, frontend, security]
-    if: github.ref == 'refs/heads/main' && needs.detect.outputs.dockerfiles == 'true'
+    if: needs.detect.outputs.dockerfiles == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -154,7 +158,9 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       # Publishing goes to GHCR with the automatic GITHUB_TOKEN. No Docker Hub
       # account is involved in pushing images.
-      - uses: docker/login-action@v4
+      - name: GHCR login (only needed when we actually push)
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -164,7 +170,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: backend
-          push: true
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/${{ env.OWNER }}/splitledger-backend:${{ github.sha }}
             ghcr.io/${{ env.OWNER }}/splitledger-backend:latest
@@ -173,7 +179,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: frontend
-          push: true
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/${{ env.OWNER }}/splitledger-web:${{ github.sha }}
             ghcr.io/${{ env.OWNER }}/splitledger-web:latest

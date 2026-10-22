@@ -1,0 +1,64 @@
+# The production stack: Caddy in front, the SPA and the API behind it.
+#
+# No database here on purpose. Postgres is managed and lives off this host (ADR-015), so
+# destroying and recreating the box loses nothing -- which is what makes the host
+# disposable rather than precious.
+#
+# OWNER is the lowercased GitHub owner and TAG is the commit SHA, both supplied by the
+# deploy. Nothing here is templated with a placeholder a human has to remember to
+# replace (finding M9).
+
+name: splitledger
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # Caddy gets a certificate for this name over ACME on first boot.
+      DOMAIN: ${DOMAIN:?set DOMAIN in the server .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in the server .env}
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/${OWNER:?set OWNER}/splitledger-web:${TAG:-latest}
+    restart: unless-stopped
+    # Not published to the host: everything reaches it through Caddy, so there is no
+    # port that bypasses TLS.
+    expose:
+      - "80"
+
+  api:
+    image: ghcr.io/${OWNER:?set OWNER}/splitledger-backend:${TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: ${DB_URL:?set DB_URL}
+      DB_USER: ${DB_USER:?set DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      # The door, shut. Off unless someone deliberately turns it on, and it toggles with
+      # a restart rather than a deploy (SL-906).
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      # The only method that could reach a real bank account (ADR-013).
+      PAYMENTS_UPI_INTENT_ENABLED: ${PAYMENTS_UPI_INTENT_ENABLED:-false}
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      COOKIE_SECURE: "true"
+      INVITE_BASE_URL: https://${DOMAIN}
+
+volumes:
+  caddy_data:
+  caddy_config:
