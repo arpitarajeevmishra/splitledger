@@ -1,3 +1,4 @@
+import { formatPaise } from '../../lib/money'
 import { useAuth } from '../../auth/useAuth'
 import { AppHeader } from '../../components/AppHeader'
 import { DemoBanner } from '../../components/DemoBanner'
@@ -24,7 +25,9 @@ export function DashboardPage() {
             Net position
           </p>
           <p className="tabular mt-2 text-[32px] leading-[38px] font-semibold text-ink">
-            &#8377;0.00
+            {/* Through formatPaise rather than written out, so the one place that turns
+                paise into rupees is the one place that has tests. */}
+            {formatPaise(0)}
           </p>
           <p className="mt-1 text-sm text-ink-muted">
             Nothing owed either way &mdash; expenses arrive in the next sprint.
