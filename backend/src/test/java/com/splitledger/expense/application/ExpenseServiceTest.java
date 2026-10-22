@@ -11,6 +11,8 @@ import static org.mockito.Mockito.when;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.expense.domain.Expense;
+import com.splitledger.expense.domain.ExpenseStatus;
 import com.splitledger.expense.domain.SplitType;
 import com.splitledger.expense.infra.ExpenseRepository;
 import com.splitledger.expense.infra.ExpenseSplitRepository;
@@ -27,6 +29,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -250,6 +253,117 @@ class ExpenseServiceTest {
                 SplitType.EQUAL, everyone()))
                 .isInstanceOf(ApiException.class);
         verify(groupLock, never()).acquire(any());
+    }
+
+    // --- void and replace -----------------------------------------------
+
+    private Expense savedExpense() {
+        ExpenseService.Recorded recorded = dinner();
+        when(expenses.findById(recorded.expense().id()))
+                .thenReturn(Optional.of(recorded.expense()));
+        return recorded.expense();
+    }
+
+    @Test
+    void voidingReversesWhatTheExpensePosted() {
+        Expense expense = savedExpense();
+
+        service.voidExpense(expense.id(), alice, 0L);
+
+        assertThat(expense.status()).isEqualTo(ExpenseStatus.VOIDED);
+        // Reversed by source, so the caller never has to hold the ledger's own id.
+        verify(ledger).reverseSource(TransactionType.EXPENSE, expense.id());
+    }
+
+    @Test
+    void aStaleVersionIsRefusedAndNothingIsTouched() {
+        Expense expense = savedExpense();
+
+        assertThatThrownBy(() -> service.voidExpense(expense.id(), alice, 7L))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo(ErrorCode.VERSION_CONFLICT);
+        assertThat(expense.status()).isEqualTo(ExpenseStatus.ACTIVE);
+        verify(ledger, never()).reverseSource(any(), any());
+    }
+
+    @Test
+    void anAlreadyVoidedExpenseCannotBeVoidedAgain() {
+        Expense expense = savedExpense();
+        service.voidExpense(expense.id(), alice, 0L);
+
+        // Twice would reverse the reversal and quietly restore the original figures.
+        assertThatThrownBy(() -> service.voidExpense(expense.id(), alice, 0L))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo(ErrorCode.INVALID_STATE_TRANSITION);
+    }
+
+    @Test
+    void voidingChecksMembershipThenLocksTheGroup() {
+        Expense expense = savedExpense();
+
+        service.voidExpense(expense.id(), alice, 0L);
+
+        InOrder order = inOrder(guard, groupLock, ledger);
+        order.verify(guard).requireMember(groupId, alice);
+        order.verify(groupLock).acquire(groupId);
+        order.verify(ledger).reverseSource(any(), any());
+    }
+
+    @Test
+    void replacingVoidsTheOriginalAndPointsTheNewOneAtIt() {
+        Expense original = savedExpense();
+
+        ExpenseService.Recorded replacement = service.replace(original.id(), alice, 0L,
+                "Dinner, corrected", 60_000L, alice, ON, SplitType.EQUAL, everyone());
+
+        assertThat(original.status()).isEqualTo(ExpenseStatus.VOIDED);
+        assertThat(replacement.expense().replacesExpenseId()).isEqualTo(original.id());
+        assertThat(replacement.expense().amountPaise()).isEqualTo(60_000L);
+        assertThat(replacement.expense().id()).isNotEqualTo(original.id());
+        // The original is reversed and the replacement posted, so the net effect is the
+        // difference rather than both amounts stacking.
+        verify(ledger).reverseSource(TransactionType.EXPENSE, original.id());
+        verify(ledger).post(eq(groupId), eq(TransactionType.EXPENSE),
+                eq(replacement.expense().id()), any());
+    }
+
+    @Test
+    void replacingKeepsTheCurrencyOfTheOriginal() {
+        Expense original = savedExpense();
+
+        ExpenseService.Recorded replacement = service.replace(original.id(), alice, 0L,
+                "Dinner", 60_000L, alice, ON, SplitType.EQUAL, everyone());
+
+        assertThat(replacement.expense().currency()).isEqualTo(original.currency());
+    }
+
+    @Test
+    void aReplacementWithBadSplitsLeavesTheOriginalAlone() {
+        Expense original = savedExpense();
+
+        assertThatThrownBy(() -> service.replace(original.id(), alice, 0L, "Dinner", 90_000L,
+                alice, ON, SplitType.EXACT,
+                List.of(new ExpenseService.Participant(alice, 1L),
+                        new ExpenseService.Participant(bob, 2L))))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo(ErrorCode.SPLIT_SUM_MISMATCH);
+
+        // Validated before anything is voided, so a rejected correction is a no-op.
+        assertThat(original.status()).isEqualTo(ExpenseStatus.ACTIVE);
+        verify(ledger, never()).reverseSource(any(), any());
+    }
+
+    @Test
+    void voidingSomethingThatDoesNotExistIsA404() {
+        when(expenses.findById(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.voidExpense(UUID.randomUUID(), alice, 0L))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo(ErrorCode.NOT_FOUND);
     }
 
     @Test

@@ -110,22 +110,71 @@ public class ExpenseService {
         Expense expense = expenses.save(Expense.record(groupId, paidBy, description, amountPaise,
                 group.currency(), splitType, expenseDate, actorId, now));
 
-        List<ExpenseSplit> saved = new ArrayList<>();
-        List<LedgerService.Line> lines = new ArrayList<>();
-        // The payer laid out the whole amount, so the group owes them that much.
-        lines.add(LedgerService.Line.of(paidBy, amountPaise));
-        owed.forEach((userId, share) -> {
-            saved.add(splits.save(ExpenseSplit.of(expense.id(), userId, share, inputs.get(userId))));
-            if (share > 0L) {
-                // Their own share comes straight back off, which is why a payer who also
-                // took part nets out to what everyone else owes them. A zero share is
-                // skipped: the ledger refuses postings that move nothing.
-                lines.add(LedgerService.Line.of(userId, -share));
-            }
-        });
+        return new Recorded(expense, writeSplitsAndPostings(expense, owed, inputs));
+    }
 
-        ledger.post(groupId, TransactionType.EXPENSE, expense.id(), lines);
-        return new Recorded(expense, saved);
+    /**
+     * Void an expense: reverse what it posted and mark it VOIDED.
+     *
+     * <p>Nothing is deleted and nothing is edited. The expense stays, the reversal stands
+     * beside the original postings, and the group's balances return to exactly where they
+     * were before -- which is the acceptance criterion, and the reason corrections work
+     * this way rather than by mutating rows.
+     *
+     * @param expectedVersion from the client's If-Match header; a stale value means
+     *     someone else changed this expense since they read it
+     */
+    @Transactional
+    public Expense voidExpense(UUID expenseId, UUID actorId, long expectedVersion) {
+        Expense expense = expenses.findById(expenseId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
+        guard.requireMember(expense.groupId(), actorId);
+        groupLock.acquire(expense.groupId());
+
+        requireCurrent(expense, expectedVersion);
+        requireActive(expense);
+
+        expense.voidIt();
+        expenses.save(expense);
+        // The ledger refuses a second reversal of the same transaction too, so a race
+        // that slipped past requireActive still cannot double-count.
+        ledger.reverseSource(TransactionType.EXPENSE, expense.id());
+        return expense;
+    }
+
+    /**
+     * Replace an expense with a corrected one.
+     *
+     * <p>Void plus record, in one transaction: the original is reversed and marked VOIDED,
+     * and a new expense points back at it. An edit in place would leave no way to answer
+     * "what did this say before, and who changed it" -- which for a figure other people
+     * are being asked to pay is the question that matters.
+     */
+    @Transactional
+    public Recorded replace(UUID expenseId, UUID actorId, long expectedVersion,
+            String description, long amountPaise, UUID paidBy, LocalDate expenseDate,
+            SplitType splitType, List<Participant> participants) {
+        Expense superseded = expenses.findById(expenseId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));
+        UUID groupId = superseded.groupId();
+        guard.requireMember(groupId, actorId);
+        groupLock.acquire(groupId);
+
+        requireCurrent(superseded, expectedVersion);
+        requireActive(superseded);
+
+        Map<UUID, Long> inputs = inputsOf(participants);
+        requireActiveMembers(groupId, paidBy, inputs.keySet());
+        SequencedMap<UUID, Long> owed = allocate(splitType, amountPaise, inputs);
+
+        superseded.voidIt();
+        expenses.save(superseded);
+        ledger.reverseSource(TransactionType.EXPENSE, superseded.id());
+
+        Instant now = Instant.now(clock);
+        Expense replacement = expenses.save(Expense.replacing(superseded, paidBy, description,
+                amountPaise, splitType, expenseDate, actorId, now));
+        return new Recorded(replacement, writeSplitsAndPostings(replacement, owed, inputs));
     }
 
     @Transactional(readOnly = true)
@@ -142,6 +191,49 @@ public class ExpenseService {
         // exist rather than confirming the expense id is real.
         guard.requireMember(expense.groupId(), actorId);
         return new Recorded(expense, splits.findAllByIdExpenseId(expenseId));
+    }
+
+    /**
+     * The splits and the ledger transaction for one expense, written together.
+     *
+     * <p>Shared by recording and replacing so a correction cannot drift from a creation:
+     * if the posting convention ever changes, it changes in one place.
+     */
+    private List<ExpenseSplit> writeSplitsAndPostings(Expense expense,
+            SequencedMap<UUID, Long> owed, Map<UUID, Long> inputs) {
+        List<ExpenseSplit> saved = new ArrayList<>();
+        List<LedgerService.Line> lines = new ArrayList<>();
+        // The payer laid out the whole amount, so the group owes them that much.
+        lines.add(LedgerService.Line.of(expense.paidBy(), expense.amountPaise()));
+        owed.forEach((userId, share) -> {
+            saved.add(splits.save(
+                    ExpenseSplit.of(expense.id(), userId, share, inputs.get(userId))));
+            if (share > 0L) {
+                // Their own share comes straight back off, which is why a payer who also
+                // took part nets out to what everyone else owes them. A zero share is
+                // skipped: the ledger refuses postings that move nothing.
+                lines.add(LedgerService.Line.of(userId, -share));
+            }
+        });
+        ledger.post(expense.groupId(), TransactionType.EXPENSE, expense.id(), lines);
+        return saved;
+    }
+
+    private static void requireCurrent(Expense expense, long expectedVersion) {
+        if (expense.version() != expectedVersion) {
+            // Someone changed it between their read and their write. Returning 409 rather
+            // than applying it blindly is the point of optimistic locking: the client has
+            // to look at what changed before deciding again.
+            throw new ApiException(ErrorCode.VERSION_CONFLICT,
+                    "This expense changed since you read it; reload and try again");
+        }
+    }
+
+    private static void requireActive(Expense expense) {
+        if (!expense.isActive()) {
+            throw new ApiException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "That expense has already been voided");
+        }
     }
 
     private static Map<UUID, Long> inputsOf(List<Participant> participants) {
