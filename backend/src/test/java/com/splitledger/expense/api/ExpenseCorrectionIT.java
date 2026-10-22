@@ -134,8 +134,10 @@ class ExpenseCorrectionIT {
         GroupBalances after = balances.of(t.groupId(), t.alice().id());
         assertThat(after.net()).allMatch(MemberBalance::isSettled);
         assertThat(after.pairwise()).isEmpty();
-        // Nothing deleted: the original postings and their mirror both remain.
-        assertThat(ledger.postingsFor(t.groupId())).hasSize(6);
+        // Nothing deleted: the original postings and their mirror both remain. Four
+        // each -- the payer is credited the whole amount and then debited their own
+        // share, which is a separate posting from the other two participants'.
+        assertThat(ledger.postingsFor(t.groupId())).hasSize(8);
     }
 
     @Test
