@@ -29,7 +29,20 @@ const MESSAGES: Record<string, string> = {
   FORBIDDEN: 'You do not have permission to do that.',
 }
 
-export function messageFor(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
+/**
+ * Codes whose `detail` the server writes for a person to read, and which carry no
+ * internals: the cap and the current count, which are the only useful part of the message
+ * and are configuration rather than anything secret.
+ *
+ * A fixed sentence here would have to leave the numbers out, and "you have reached a limit"
+ * is not an error message -- SL-906 asks for a clear 422, and clear means the number.
+ */
+const DETAIL_IS_FOR_READING = new Set(['ACCOUNT_LIMIT_REACHED'])
+
+export function messageFor(
+  error: unknown,
+  fallback = 'Something went wrong. Please try again.',
+): string {
   const problem = problemOf(error)
   // Indexed access is string | undefined under noUncheckedIndexedAccess, so the lookup is
   // bound once rather than indexed twice and asserted.
@@ -37,7 +50,10 @@ export function messageFor(error: unknown, fallback = 'Something went wrong. Ple
   if (mapped !== undefined) {
     return mapped
   }
-  // Never surface a raw server detail: it can carry internals, and the backend already
-  // logs the correlation id for anything genuinely unexpected.
+  if (problem?.code !== undefined && DETAIL_IS_FOR_READING.has(problem.code) && problem.detail) {
+    return problem.detail
+  }
+  // Never surface any other raw server detail: it can carry internals, and the backend
+  // already logs the correlation id for anything genuinely unexpected.
   return fallback
 }

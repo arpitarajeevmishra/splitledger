@@ -7,10 +7,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.limits.AccountLimits;
 import com.splitledger.expense.domain.Expense;
 import com.splitledger.expense.domain.ExpenseStatus;
 import com.splitledger.expense.domain.SplitType;
@@ -74,7 +76,7 @@ class ExpenseServiceTest {
         bob = UUID.randomUUID();
         carol = UUID.randomUUID();
         service = new ExpenseService(expenses, splits, members, guard, groupLock, ledger,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                new AccountLimits(20, 50, 200), Clock.fixed(NOW, ZoneOffset.UTC));
 
         when(groupLock.acquire(groupId))
                 .thenReturn(ExpenseGroup.create("Flat 402", "INR", alice, NOW));
@@ -381,5 +383,33 @@ class ExpenseServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.CURRENCY_UNSUPPORTED);
+    }
+
+    @Test
+    void anExpenseBeyondTheDailyCapIsRefusedBeforeAnythingIsWritten() {
+        when(expenses.countCreatedSince(eq(alice), any())).thenReturn(200L);
+
+        assertThatThrownBy(() -> service.record(groupId, alice, "Dinner", 90_000L, alice,
+                ON, SplitType.EQUAL, everyone()))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).code())
+                        .isEqualTo(ErrorCode.ACCOUNT_LIMIT_REACHED));
+
+        // Not a single row, and no postings: the cap is checked before the work, not after.
+        verify(expenses, never()).save(any());
+        verify(splits, never()).save(any());
+        verifyNoInteractions(ledger);
+    }
+
+    @Test
+    void theDailyCapCountsARollingTwentyFourHours() {
+        // A calendar day hands out a fresh quota at midnight, so an account at its cap
+        // could record twice the allowance across the few minutes either side of it.
+        when(expenses.countCreatedSince(eq(alice), any())).thenReturn(0L);
+
+        service.record(groupId, alice, "Dinner", 90_000L, alice, ON, SplitType.EQUAL,
+                everyone());
+
+        verify(expenses).countCreatedSince(alice, NOW.minus(AccountLimits.EXPENSE_WINDOW));
     }
 }

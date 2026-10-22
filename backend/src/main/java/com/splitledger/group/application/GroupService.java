@@ -2,6 +2,7 @@ package com.splitledger.group.application;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.limits.AccountLimits;
 import com.splitledger.group.api.dto.GroupDetailResponse;
 import com.splitledger.group.api.dto.GroupMemberResponse;
 import com.splitledger.group.api.dto.GroupSummaryResponse;
@@ -32,21 +33,23 @@ public class GroupService {
     private final GroupMemberRepository members;
     private final UserRepository users;
     private final GroupAccessGuard guard;
+    private final AccountLimits limits;
     private final Clock clock;
 
     @Autowired
     GroupService(GroupRepository groups, GroupMemberRepository members, UserRepository users,
-            GroupAccessGuard guard) {
-        this(groups, members, users, guard, Clock.systemUTC());
+            GroupAccessGuard guard, AccountLimits limits) {
+        this(groups, members, users, guard, limits, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     GroupService(GroupRepository groups, GroupMemberRepository members, UserRepository users,
-            GroupAccessGuard guard, Clock clock) {
+            GroupAccessGuard guard, AccountLimits limits, Clock clock) {
         this.groups = groups;
         this.members = members;
         this.users = users;
         this.guard = guard;
+        this.limits = limits;
         this.clock = clock;
     }
 
@@ -57,6 +60,7 @@ public class GroupService {
      */
     @Transactional
     public GroupDetailResponse create(UUID creatorId, String name, String currency) {
+        limits.requireRoomForGroup(groups.countByCreatedBy(creatorId));
         Instant now = Instant.now(clock);
         ExpenseGroup group = groups.save(ExpenseGroup.create(name, currency, creatorId, now));
         members.save(GroupMember.join(group.id(), creatorId, Role.ADMIN, now));

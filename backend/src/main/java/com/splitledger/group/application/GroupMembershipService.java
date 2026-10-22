@@ -2,6 +2,7 @@ package com.splitledger.group.application;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.limits.AccountLimits;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.domain.Role;
 import com.splitledger.group.infra.GroupMemberRepository;
@@ -19,20 +20,24 @@ public class GroupMembershipService {
     private final GroupMemberRepository members;
     private final GroupAccessGuard guard;
     private final GroupBalanceProbe balances;
+    private final GroupLock groupLock;
+    private final AccountLimits limits;
     private final Clock clock;
 
     @Autowired
     GroupMembershipService(GroupMemberRepository members, GroupAccessGuard guard,
-            GroupBalanceProbe balances) {
-        this(members, guard, balances, Clock.systemUTC());
+            GroupBalanceProbe balances, GroupLock groupLock, AccountLimits limits) {
+        this(members, guard, balances, groupLock, limits, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     GroupMembershipService(GroupMemberRepository members, GroupAccessGuard guard,
-            GroupBalanceProbe balances, Clock clock) {
+            GroupBalanceProbe balances, GroupLock groupLock, AccountLimits limits, Clock clock) {
         this.members = members;
         this.guard = guard;
         this.balances = balances;
+        this.groupLock = groupLock;
+        this.limits = limits;
         this.clock = clock;
     }
 
@@ -46,6 +51,11 @@ public class GroupMembershipService {
      *
      * <p>Called by the invite flow once an invitation is accepted. Nothing else may add a
      * member: FR-10 says nobody joins a group without consenting.
+     *
+     * <p>Takes the group lock before counting members, which is the only way the cap can
+     * be exact: two invitations accepted at the same instant would otherwise both read a
+     * group with one place left and both take it. Joins to one group serialise; different
+     * groups never wait on each other (ADR-004).
      */
     @Transactional
     public GroupMember joinOrRejoin(UUID groupId, UUID userId, Role role) {
@@ -55,10 +65,21 @@ public class GroupMembershipService {
                     if (existing.isActive()) {
                         return existing;   // already in; joining twice is a no-op
                     }
+                    // A re-join raises the active count exactly as a first join does, so
+                    // it is capped too -- otherwise leaving and re-joining is a way past it.
+                    requireRoom(groupId);
                     existing.rejoin(role, now);
                     return members.save(existing);
                 })
-                .orElseGet(() -> members.save(GroupMember.join(groupId, userId, role, now)));
+                .orElseGet(() -> {
+                    requireRoom(groupId);
+                    return members.save(GroupMember.join(groupId, userId, role, now));
+                });
+    }
+
+    private void requireRoom(UUID groupId) {
+        groupLock.acquire(groupId);
+        limits.requireRoomForMember(members.countByIdGroupIdAndLeftAtIsNull(groupId));
     }
 
     /**
