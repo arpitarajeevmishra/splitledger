@@ -134,7 +134,7 @@ public class ExpenseService {
         requireCurrent(expense, expectedVersion);
         requireActive(expense);
 
-        expense.voidIt();
+        expense.voidIt(actorId, Instant.now(clock));
         expenses.save(expense);
         // The ledger refuses a second reversal of the same transaction too, so a race
         // that slipped past requireActive still cannot double-count.
@@ -167,11 +167,11 @@ public class ExpenseService {
         requireActiveMembers(groupId, paidBy, inputs.keySet());
         SequencedMap<UUID, Long> owed = allocate(splitType, amountPaise, inputs);
 
-        superseded.voidIt();
+        Instant now = Instant.now(clock);
+        superseded.voidIt(actorId, now);
         expenses.save(superseded);
         ledger.reverseSource(TransactionType.EXPENSE, superseded.id());
 
-        Instant now = Instant.now(clock);
         Expense replacement = expenses.save(Expense.replacing(superseded, paidBy, description,
                 amountPaise, splitType, expenseDate, actorId, now));
         return new Recorded(replacement, writeSplitsAndPostings(replacement, owed, inputs));
