@@ -145,3 +145,32 @@ export type ActivityEntry = {
   counterpartyId: string | null
   movedMoney: boolean
 }
+
+export type PaymentMethod = 'RAZORPAY' | 'SANDBOX' | 'UPI_INTENT' | 'CASH'
+
+export type SettlementStatus =
+  'INITIATED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'CANCELLED' | 'EXPIRED'
+
+export type Settlement = {
+  id: string
+  groupId: string
+  fromUser: string
+  toUser: string
+  amountPaise: number
+  method: PaymentMethod
+  status: SettlementStatus
+  gatewayOrderId: string | null
+  gatewayPaymentId: string | null
+  expiresAt: string | null
+  createdAt: string
+  confirmedAt: string | null
+  version: number
+  /** Always true in this product; the flag exists so the UI need not hardcode it. */
+  demoOnly: boolean
+}
+
+export type CreateSettlement = {
+  toUser: string
+  amountPaise: number
+  method: PaymentMethod
+}
