@@ -73,6 +73,48 @@ public class SettlementController {
                 .toList();
     }
 
+    /**
+     * The payer says they have sent the money.
+     *
+     * <p>For cash and UPI intent only in practice: a gateway settlement moves to pending
+     * when its order is created, not because someone said so.
+     */
+    @PostMapping("/settlements/{settlementId}/mark-paid")
+    public SettlementResponse markPaid(Authentication authentication,
+            @PathVariable UUID settlementId) {
+        return SettlementResponse.of(
+                settlements.markPaid(settlementId, AuthenticatedUser.require(authentication)));
+    }
+
+    /**
+     * The receiver says the money arrived. This is what posts it to the ledger.
+     *
+     * <p>Confirming twice succeeds and posts once -- a second tap and a retried request
+     * are the same event.
+     */
+    @PostMapping("/settlements/{settlementId}/confirm")
+    public SettlementResponse confirm(Authentication authentication,
+            @PathVariable UUID settlementId) {
+        return SettlementResponse.of(
+                settlements.confirm(settlementId, AuthenticatedUser.require(authentication)));
+    }
+
+    /** The receiver says it never arrived. */
+    @PostMapping("/settlements/{settlementId}/reject")
+    public SettlementResponse reject(Authentication authentication,
+            @PathVariable UUID settlementId) {
+        return SettlementResponse.of(
+                settlements.reject(settlementId, AuthenticatedUser.require(authentication)));
+    }
+
+    /** The payer calls it off. */
+    @PostMapping("/settlements/{settlementId}/cancel")
+    public SettlementResponse cancel(Authentication authentication,
+            @PathVariable UUID settlementId) {
+        return SettlementResponse.of(
+                settlements.cancel(settlementId, AuthenticatedUser.require(authentication)));
+    }
+
     /** Single settlement, for a client polling one it just created. */
     @GetMapping("/settlements/{settlementId}")
     public SettlementResponse detail(Authentication authentication,

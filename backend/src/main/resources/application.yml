@@ -102,6 +102,10 @@ app:
     # own claim immediately.
     claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
     purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
+  settlements:
+    # Every minute (LLD 7.1). The deadlines themselves live on the payment method, which
+    # is where the reason for them lives.
+    expiry-cron: ${SETTLEMENT_EXPIRY_CRON:0 * * * * *}
   invites:
     # A week: long enough to be passed on and acted upon, short enough that a link
     # forwarded into some group chat stops working.

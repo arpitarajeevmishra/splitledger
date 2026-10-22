@@ -10,7 +10,10 @@ import com.splitledger.group.application.GroupLock;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.infra.GroupMemberRepository;
 import com.splitledger.settlement.domain.Settlement;
+import com.splitledger.ledger.application.LedgerService;
+import com.splitledger.ledger.domain.TransactionType;
 import com.splitledger.settlement.domain.SettlementMethod;
+import com.splitledger.settlement.domain.SettlementStatus;
 import com.splitledger.settlement.infra.SettlementRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -42,22 +45,26 @@ public class SettlementService {
     private final GroupAccessGuard guard;
     private final GroupLock groupLock;
     private final BalanceService balances;
+    private final LedgerService ledger;
     private final Clock clock;
 
     @Autowired
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
-            GroupAccessGuard guard, GroupLock groupLock, BalanceService balances) {
-        this(settlements, members, guard, groupLock, balances, Clock.systemUTC());
+            GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
+            LedgerService ledger) {
+        this(settlements, members, guard, groupLock, balances, ledger, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
-            GroupAccessGuard guard, GroupLock groupLock, BalanceService balances, Clock clock) {
+            GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
+            LedgerService ledger, Clock clock) {
         this.settlements = settlements;
         this.members = members;
         this.guard = guard;
         this.groupLock = groupLock;
         this.balances = balances;
+        this.ledger = ledger;
         this.clock = clock;
     }
 
@@ -80,6 +87,105 @@ public class SettlementService {
 
         return settlements.save(Settlement.initiate(groupId, payerId, payeeId, amountPaise,
                 method, Instant.now(clock)));
+    }
+
+    /**
+     * The payer says they have sent the money. Nothing is posted yet -- only the receiver
+     * saying it arrived moves the ledger.
+     */
+    @Transactional
+    public Settlement markPaid(UUID settlementId, UUID actorId) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayer(settlement, actorId, "Only the payer can mark this as paid");
+
+        settlement.markPending(Instant.now(clock));
+        return settlements.save(settlement);
+    }
+
+    /**
+     * The receiver says the money arrived, which is what posts it to the ledger.
+     *
+     * <p>Idempotent: confirming an already-confirmed settlement succeeds and posts
+     * nothing. A receiver tapping twice and a retried request are the same event, and the
+     * ledger's unique index on (type, source_id) would refuse the second posting anyway --
+     * this returns success rather than surfacing that as an error.
+     */
+    @Transactional
+    public Settlement confirm(UUID settlementId, UUID actorId) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayee(settlement, actorId, "Only the person being paid can confirm it arrived");
+
+        if (settlement.status() == SettlementStatus.CONFIRMED) {
+            return settlement;
+        }
+
+        // Re-checked here, not just at creation: two settlements could each have been
+        // valid when started and together exceed the debt (LLD 7.2). Whichever confirms
+        // second is the one that is now too much.
+        requireWithinOutstanding(settlement.groupId(), settlement.fromUser(),
+                settlement.toUser(), settlement.amountPaise());
+
+        settlement.confirm(Instant.now(clock));
+        settlements.save(settlement);
+
+        // The payer laid out money, so the group owes them that much more; the receiver
+        // has been made whole by the same amount (LLD 5.1).
+        ledger.post(settlement.groupId(), TransactionType.SETTLEMENT, settlement.id(), List.of(
+                LedgerService.Line.of(settlement.fromUser(), settlement.amountPaise()),
+                LedgerService.Line.of(settlement.toUser(), -settlement.amountPaise())));
+        return settlement;
+    }
+
+    /** The receiver says it never arrived. */
+    @Transactional
+    public Settlement reject(UUID settlementId, UUID actorId) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayee(settlement, actorId, "Only the person being paid can reject it");
+
+        settlement.reject(Instant.now(clock));
+        return settlements.save(settlement);
+    }
+
+    /** The payer calls it off. */
+    @Transactional
+    public Settlement cancel(UUID settlementId, UUID actorId) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayer(settlement, actorId, "Only the payer can cancel this");
+
+        settlement.cancel(Instant.now(clock));
+        return settlements.save(settlement);
+    }
+
+    /**
+     * Loads a settlement for a state change, with the group locked first.
+     *
+     * <p>Group first, then the row: confirming posts to the ledger and re-reads balances,
+     * and both have to be inside the lock that serialises the group's money writes.
+     */
+    private Settlement lockedForAction(UUID settlementId, UUID actorId) {
+        UUID groupId = settlements.findGroupIdById(settlementId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such settlement"));
+        guard.requireMember(groupId, actorId);
+        groupLock.acquire(groupId);
+
+        // Loaded after the lock so its status is the committed one, not a snapshot taken
+        // while someone else was still mid-transition (D-83).
+        return settlements.findById(settlementId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such settlement"));
+    }
+
+    private static void requirePayer(Settlement settlement, UUID actorId, String message) {
+        if (!settlement.fromUser().equals(actorId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN, message);
+        }
+    }
+
+    private static void requirePayee(Settlement settlement, UUID actorId, String message) {
+        if (!settlement.toUser().equals(actorId)) {
+            // The receiver confirms, never the payer: otherwise anyone could settle their
+            // own debts by paying nothing and confirming it themselves.
+            throw new ApiException(ErrorCode.FORBIDDEN, message);
+        }
     }
 
     @Transactional(readOnly = true)
