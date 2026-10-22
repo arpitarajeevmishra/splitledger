@@ -4,6 +4,8 @@ import { useAuth } from '../../auth/useAuth'
 import { AppHeader } from '../../components/AppHeader'
 import { DemoBanner } from '../../components/DemoBanner'
 import { formatDate } from '../../lib/format'
+import { BalancesPanel } from '../expenses/BalancesPanel'
+import { ExpenseList } from '../expenses/ExpenseList'
 import { InvitesPanel } from './InvitesPanel'
 import { MembersPanel } from './MembersPanel'
 import { useGroup } from './useGroups'
@@ -49,12 +51,11 @@ export function GroupDetailPage() {
               <h1 className="mt-2 text-[28px] leading-[34px] font-semibold text-ink">
                 {group.name}
               </h1>
-              <p className="mt-3 text-sm text-ink-muted">
-                Expenses and balances arrive in the next sprint. For now a group is its people.
-              </p>
             </section>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <ExpenseList group={group} />
+              <BalancesPanel group={group} />
               <MembersPanel group={group} youId={user?.id} />
               {/* Listing invites is an admin action on the server; asking as a member
                   would be a 403, so a member is not shown the panel at all. */}

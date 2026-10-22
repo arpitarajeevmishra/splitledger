@@ -77,3 +77,71 @@ export type ApiProblem = {
   detail?: string
   correlationId?: string
 }
+
+export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENT' | 'SHARES'
+export type ExpenseStatus = 'ACTIVE' | 'VOIDED'
+
+export type ExpenseSplit = {
+  userId: string
+  owedPaise: number
+  /** What was entered: paise, basis points or a share count. Null for EQUAL. */
+  inputValue: number | null
+}
+
+export type Expense = {
+  id: string
+  groupId: string
+  description: string
+  amountPaise: number
+  currency: string
+  paidBy: string
+  expenseDate: string
+  splitType: SplitType
+  status: ExpenseStatus
+  createdAt: string
+  version: number
+  splits: ExpenseSplit[]
+}
+
+/** A row in the group's expense list; splits come with the detail. */
+export type ExpenseSummary = {
+  id: string
+  description: string
+  amountPaise: number
+  paidBy: string
+  expenseDate: string
+  splitType: SplitType
+  status: ExpenseStatus
+  version: number
+}
+
+export type CreateExpense = {
+  description: string
+  amountPaise: number
+  paidBy: string
+  expenseDate: string
+  splitType: SplitType
+  participants: { userId: string; value?: number }[]
+}
+
+export type NetBalance = { userId: string; netPaise: number; settled: boolean }
+export type Debt = { from: string; to: string; amountPaise: number }
+export type Balances = { net: NetBalance[]; pairwise: Debt[] }
+
+export type SuggestedTransfer = { from: string; to: string; amountPaise: number }
+export type SimplifiedPlan = { transfers: SuggestedTransfer[]; settled: boolean }
+
+export type ActivityKind =
+  'EXPENSE_ADDED' | 'EXPENSE_VOIDED' | 'SETTLEMENT_CONFIRMED' | 'MEMBER_JOINED' | 'MEMBER_LEFT'
+
+export type ActivityEntry = {
+  kind: ActivityKind
+  subjectId: string
+  /** Null for an expense voided before the backend recorded who did it. */
+  actorId: string | null
+  at: string
+  description: string | null
+  amountPaise: number | null
+  counterpartyId: string | null
+  movedMoney: boolean
+}
