@@ -3,7 +3,6 @@ package com.splitledger.common.idempotency;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,20 +33,13 @@ public class IdempotencyClaims {
     /**
      * Insert the claim and commit it immediately.
      *
-     * @return the claim if this caller won, or empty if the key is already taken
+     * @return true if this caller claimed the key, false if someone already holds it --
+     *     the caller then re-reads to decide whether this is a replay, a conflict, or a
+     *     request still in flight
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<IdempotencyRecord> claim(UUID userId, String key, String requestHash,
-            Instant now) {
-        try {
-            IdempotencyRecord claimed =
-                    records.saveAndFlush(IdempotencyRecord.claim(userId, key, requestHash, now));
-            return Optional.of(claimed);
-        } catch (DataIntegrityViolationException ex) {
-            // Someone else holds it. The caller re-reads to decide whether this is a
-            // replay, a conflict, or a request still in flight.
-            return Optional.empty();
-        }
+    public boolean claim(UUID userId, String key, String requestHash, Instant now) {
+        return records.insertClaim(userId, key, requestHash, now) == 1;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)

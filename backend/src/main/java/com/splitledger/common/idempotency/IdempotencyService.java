@@ -66,9 +66,7 @@ public class IdempotencyService {
             Supplier<T> work, Class<T> responseType) {
         String requestHash = SecureTokens.hash(writeJson(request));
 
-        Optional<IdempotencyRecord> claimed =
-                claims.claim(userId, key, requestHash, Instant.now(clock));
-        if (claimed.isEmpty()) {
+        if (!claims.claim(userId, key, requestHash, Instant.now(clock))) {
             return replay(userId, key, requestHash, responseType);
         }
 

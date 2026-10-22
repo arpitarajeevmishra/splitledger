@@ -62,8 +62,7 @@ class IdempotencyServiceTest {
     @Test
     void runsTheWorkWhenTheKeyIsFree() {
         Body request = new Body("Dinner", 90_000L);
-        when(claims.claim(eq(userId), eq("key"), any(), any()))
-                .thenReturn(Optional.of(IdempotencyRecord.claim(userId, "key", "h", NOW)));
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(true);
 
         IdempotencyService.Result<Response> result = service.runOnce(userId, "key", request, 201,
                 () -> new Response("e1", 90_000L), Response.class);
@@ -77,7 +76,7 @@ class IdempotencyServiceTest {
     @Test
     void sameKeyAndSameBodyReturnsTheStoredResponseAndRunsNothing() {
         Body request = new Body("Dinner", 90_000L);
-        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(Optional.empty());
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(false);
         when(claims.find(userId, "key"))
                 .thenReturn(Optional.of(completed(request, new Response("e1", 90_000L), 201)));
 
@@ -98,7 +97,7 @@ class IdempotencyServiceTest {
 
     @Test
     void sameKeyWithADifferentBodyIsRefused() {
-        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(Optional.empty());
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(false);
         when(claims.find(userId, "key")).thenReturn(Optional.of(
                 completed(new Body("Dinner", 90_000L), new Response("e1", 90_000L), 201)));
 
@@ -113,7 +112,7 @@ class IdempotencyServiceTest {
     @Test
     void anIdenticalRequestStillInFlightGets409() {
         Body request = new Body("Dinner", 90_000L);
-        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(Optional.empty());
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(false);
         when(claims.find(userId, "key")).thenReturn(Optional.of(IdempotencyRecord.claim(userId,
                 "key",
                 com.splitledger.common.security.SecureTokens.hash(json.writeValueAsString(request)),
@@ -130,8 +129,7 @@ class IdempotencyServiceTest {
 
     @Test
     void aFailedRequestReleasesItsKeySoTheClientCanRetryAtOnce() {
-        when(claims.claim(eq(userId), eq("key"), any(), any()))
-                .thenReturn(Optional.of(IdempotencyRecord.claim(userId, "key", "h", NOW)));
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(true);
 
         assertThatThrownBy(() -> service.runOnce(userId, "key", new Body("Dinner", 90_000L), 201,
                 () -> {
@@ -150,7 +148,7 @@ class IdempotencyServiceTest {
         // Field order in the serialised body must not change the hash for the same record,
         // or an identical retry would look like a different request.
         Body request = new Body("Dinner", 90_000L);
-        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(Optional.empty());
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(false);
         when(claims.find(userId, "key"))
                 .thenReturn(Optional.of(completed(request, new Response("e1", 90_000L), 201)));
 
@@ -160,7 +158,7 @@ class IdempotencyServiceTest {
 
     @Test
     void aClaimThatVanishesBetweenTheAttemptAndTheLookupIsReportedAsInFlight() {
-        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(Optional.empty());
+        when(claims.claim(eq(userId), eq("key"), any(), any())).thenReturn(false);
         when(claims.find(userId, "key")).thenReturn(Optional.empty());
 
         // Only a concurrent failure releasing the key can do this; telling the client to
