@@ -94,6 +94,14 @@ app:
     # Short on purpose: there is no revocation list, so this is the window in which a
     # stolen access token stays usable (ADR-011).
     access-ttl: PT15M
+  idempotency:
+    # How long a completed key is replayable. Comfortably longer than any retry a client
+    # would still be making, and short enough that the table stays small.
+    retention: ${IDEMPOTENCY_RETENTION:PT24H}
+    # A claim this old means the process died mid-request; a clean failure releases its
+    # own claim immediately.
+    claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
+    purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
   invites:
     # A week: long enough to be passed on and acted upon, short enough that a link
     # forwarded into some group chat stops working.
