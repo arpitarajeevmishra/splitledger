@@ -53,13 +53,7 @@ class ArchitectureTest {
                     .that().resideInAPackage("..ledger..")
                     .should().dependOnClassesThat()
                     .resideInAnyPackage("..expense..", "..settlement..")
-                    .because("the ledger only posts balanced transactions; it must not know why")
-                    // The ledger module arrives in S3. Until then this rule matches no classes,
-                    // and ArchUnit fails empty rules by default -- which is the right default,
-                    // because it catches a mistyped package name. Exempted here per-rule rather
-                    // than by setting archRule.failOnEmptyShould=false globally, which would
-                    // disable that protection for every rule. Remove this line in SL-302.
-                    .allowEmptyShould(true);
+                    .because("the ledger only posts balanced transactions; it must not know why");
 
     @ArchTest
     static final ArchRule only_payment_may_talk_to_razorpay =
