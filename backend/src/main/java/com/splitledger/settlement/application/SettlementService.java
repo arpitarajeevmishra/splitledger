@@ -13,6 +13,7 @@ import com.splitledger.settlement.domain.Settlement;
 import com.splitledger.ledger.application.LedgerService;
 import com.splitledger.payment.port.PaymentProvider;
 import com.splitledger.payment.port.PaymentRequest;
+import com.splitledger.payment.port.ProviderCallback;
 import com.splitledger.payment.port.ProviderOrder;
 import com.splitledger.ledger.domain.TransactionType;
 import com.splitledger.common.payment.PaymentMethod;
@@ -185,6 +186,54 @@ public class SettlementService {
         settlement.recordGatewayOrder(order.orderId());
         settlement.markPending(Instant.now(clock));
         return settlements.save(settlement);
+    }
+
+    /**
+     * The payer's browser reports that a gateway checkout finished (SL-602).
+     *
+     * <p>Everything in the callback is attacker-controlled: it is an ordinary authenticated
+     * request carrying three strings a page handed over. Two things have to hold before any
+     * of it is believed, and the order matters.
+     *
+     * <p>First the signature, asked of the provider -- only it can tell whether the gateway
+     * really said these words. Then the order id, compared against the one stored when the
+     * order was created: a signature proves Razorpay said something, not that it said it
+     * about this debt. Without that comparison, anyone holding a genuine callback for their
+     * own ten-rupee payment could post it against someone else's ten-thousand-rupee
+     * settlement, and every check would pass.
+     *
+     * <p>Nothing is written until both hold, so a tampered callback leaves the settlement
+     * exactly as it was.
+     */
+    @Transactional
+    public Settlement confirmFromCallback(UUID settlementId, UUID actorId, String orderId,
+            String paymentId, String signature) {
+        Settlement settlement = lockedForAction(settlementId, actorId);
+        requirePayer(settlement, actorId, "Only the payer can complete this payment");
+
+        if (settlement.status() == SettlementStatus.CONFIRMED) {
+            // The result page reloaded, or the browser posted twice. Already-confirmed is
+            // the answer, not an error -- and re-posting must not post to the ledger again.
+            return settlement;
+        }
+        if (settlement.gatewayOrderId() == null) {
+            throw new ApiException(ErrorCode.INVALID_STATE_TRANSITION,
+                    "This payment has no gateway order to complete");
+        }
+
+        String verifiedPaymentId = providerFor(settlement.method())
+                .verifiedPaymentId(new ProviderCallback(orderId, paymentId, signature))
+                .orElseThrow(() -> new ApiException(ErrorCode.PAYMENT_SIGNATURE_INVALID,
+                        "That payment could not be verified"));
+
+        if (!settlement.gatewayOrderId().equals(orderId)) {
+            // Same error as a bad signature, deliberately: a caller probing with genuine
+            // callbacks should not learn which of the two checks they failed.
+            throw new ApiException(ErrorCode.PAYMENT_SIGNATURE_INVALID,
+                    "That payment could not be verified");
+        }
+
+        return confirmFromProvider(settlementId, verifiedPaymentId);
     }
 
     /**

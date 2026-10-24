@@ -46,4 +46,22 @@ public interface PaymentProvider {
     default Optional<String> completedPaymentId(String orderId, Instant orderedAt) {
         return Optional.empty();
     }
+
+    /**
+     * Is this callback genuinely from the provider, about this order?
+     *
+     * <p>The payer's browser is told the payment succeeded and posts that claim here. The
+     * claim is worth nothing on its own -- it comes from a page anyone can replay or edit --
+     * so a provider that can prove it answers with the payment id, and one that cannot
+     * answers empty.
+     *
+     * <p>Empty by default, which refuses the callback. That is the safe direction: a
+     * provider with no way to verify a browser's word must not be able to confirm a
+     * settlement by accident. The sandbox has none, and reaches the same end by polling.
+     *
+     * @return the provider's payment id when the signature holds, otherwise empty
+     */
+    default Optional<String> verifiedPaymentId(ProviderCallback callback) {
+        return Optional.empty();
+    }
 }
