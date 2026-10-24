@@ -1,10 +1,11 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { invitesApi } from '../../api/groups'
 import { messageFor } from '../../api/problem'
 import type { InvitePreview } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
+import { groupKeys } from '../groups/useGroups'
 import { Button } from '../../components/ui/Button'
 import { DemoBanner } from '../../components/DemoBanner'
 import { formatDate } from '../../lib/format'
@@ -25,6 +26,7 @@ export function InvitePage() {
   const navigate = useNavigate()
   const [actionError, setActionError] = useState<string | null>(null)
   const [declined, setDeclined] = useState(false)
+  const queryClient = useQueryClient()
 
   const preview = useQuery<InvitePreview>({
     queryKey: ['invite', token],
@@ -33,7 +35,16 @@ export function InvitePage() {
     retry: false,
   })
 
-  const accept = useMutation({ mutationFn: () => api.accept(token ?? '') })
+  // Accepting adds a membership, so the caller's group list is now wrong. Awaited
+  // before onAccept navigates, so the groups list is already correct by the time it can
+  // be reached -- otherwise the new group is missing from it until the cache goes stale.
+  const accept = useMutation({
+    mutationFn: () => api.accept(token ?? ''),
+    onSuccess: async ({ groupId }) => {
+      await queryClient.invalidateQueries({ queryKey: groupKeys.list() })
+      await queryClient.invalidateQueries({ queryKey: groupKeys.detail(groupId) })
+    },
+  })
   const decline = useMutation({ mutationFn: () => api.decline(token ?? '') })
 
   async function onAccept() {
