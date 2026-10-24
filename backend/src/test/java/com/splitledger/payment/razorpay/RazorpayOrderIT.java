@@ -11,15 +11,10 @@ import com.splitledger.expense.application.ExpenseService;
 import com.splitledger.expense.domain.SplitType;
 import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.domain.Role;
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,10 +55,7 @@ import org.springframework.test.web.servlet.MockMvc;
 })
 class RazorpayOrderIT {
 
-    /** Every order the stub was asked to create, in arrival order. */
-    private static final List<String> RECEIVED = new CopyOnWriteArrayList<>();
-
-    private static final HttpServer STUB = startStub();
+    private static final GatewayStub STUB = new GatewayStub();
 
     @Autowired
     private MockMvc mockMvc;
@@ -79,41 +71,20 @@ class RazorpayOrderIT {
 
     @DynamicPropertySource
     static void pointTheProviderAtTheStub(DynamicPropertyRegistry registry) {
-        registry.add("app.payments.razorpay.base-url",
-                () -> "http://localhost:" + STUB.getAddress().getPort());
-    }
-
-    private static HttpServer startStub() {
-        try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-            server.createContext("/v1/orders", exchange -> {
-                RECEIVED.add(new String(exchange.getRequestBody().readAllBytes(),
-                        StandardCharsets.UTF_8));
-                // A different id per call, so "the same order came back" cannot pass by
-                // the stub happening to be constant.
-                byte[] body = ("{\"id\":\"order_stub_" + RECEIVED.size()
-                        + "\",\"status\":\"created\"}").getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, body.length);
-                try (OutputStream out = exchange.getResponseBody()) {
-                    out.write(body);
-                }
-            });
-            server.start();
-            return server;
-        } catch (IOException ex) {
-            throw new IllegalStateException("could not start the Razorpay stub", ex);
-        }
+        registry.add("app.payments.razorpay.base-url", STUB::baseUrl);
     }
 
     @AfterAll
     static void stopStub() {
-        STUB.stop(0);
+        STUB.close();
     }
 
     @BeforeEach
     void forgetEarlierCalls() {
-        RECEIVED.clear();
+        // Only the request log is reset. The order ids must stay unique across the whole
+        // run: settlements.gateway_order_id is UNIQUE, and a counter that restarted here
+        // is exactly what broke this class in CI.
+        STUB.forgetOrdersReceived();
     }
 
     @Test
@@ -125,7 +96,8 @@ class RazorpayOrderIT {
                         .header("Authorization", "Bearer " + settle.payerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.gatewayOrderId").value("order_stub_1"))
+                .andExpect(jsonPath("$.gatewayOrderId").value(
+                        org.hamcrest.Matchers.startsWith("order_")))
                 .andReturn().getResponse().getContentAsString();
 
         // Asked again, as a client retrying after a dropped response would. Two orders
@@ -136,12 +108,12 @@ class RazorpayOrderIT {
                 .andExpect(jsonPath("$.gatewayOrderId")
                         .value(JsonPath.read(first, "$.gatewayOrderId")));
 
-        assertThat(RECEIVED)
+        assertThat(STUB.ordersReceived())
                 .as("Razorpay was asked exactly once, however often the client asked us")
                 .hasSize(1);
         // And the request carried our settlement id, which is the only thing a later
         // callback can be matched on.
-        assertThat(RECEIVED.getFirst())
+        assertThat(STUB.ordersReceived().getFirst())
                 .contains("\"receipt\":\"" + settle.settlementId() + "\"")
                 .contains("\"amount\":45000");
     }
@@ -154,10 +126,12 @@ class RazorpayOrderIT {
                         .header("Authorization", "Bearer " + settle.payerToken()))
                 .andExpect(status().isOk())
                 // The sandbox makes ids like sandbox_<uuid>. Reaching the stub at all is
-                // the proof that method selection, not bean ordering, decided this.
-                .andExpect(jsonPath("$.gatewayOrderId").value("order_stub_1"));
+                // the proof that method selection, not bean ordering, decided this -- so
+                // the assertion is that the stub was called, not that the id is a literal.
+                .andExpect(jsonPath("$.gatewayOrderId").value(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith("sandbox_"))));
 
-        assertThat(RECEIVED).hasSize(1);
+        assertThat(STUB.ordersReceived()).hasSize(1);
     }
 
     @Test
@@ -181,7 +155,7 @@ class RazorpayOrderIT {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("SETTLEMENT_BELOW_GATEWAY_MINIMUM"));
 
-        assertThat(RECEIVED).as("nothing left the building").isEmpty();
+        assertThat(STUB.ordersReceived()).as("nothing left the building").isEmpty();
     }
 
     @Test
@@ -323,7 +297,13 @@ class RazorpayOrderIT {
     private record Settle(UUID settlementId, String payerToken, UUID groupId, UUID payerId) {
     }
 
-    /** Bob owes Alice half of an expense, and a RAZORPAY settlement for it. */
+    /**
+     * Bob owes Alice half of an expense, and a RAZORPAY settlement for it.
+     *
+     * <p>A fresh group, and a fresh pair of accounts, on every call. So a balance
+     * assertion is always about one of these and never about the sum of two -- which
+     * is a mistake worth naming, because it was made here and CI caught it.
+     */
     private Settle aDebtOf(long amountPaise) throws Exception {
         Account alice = newUser("Alice");
         Account bob = newUser("Bob");

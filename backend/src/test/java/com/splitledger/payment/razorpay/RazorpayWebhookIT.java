@@ -13,10 +13,6 @@ import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.domain.Role;
 import com.splitledger.ledger.application.LedgerService;
 import com.splitledger.ledger.domain.LedgerPosting;
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HexFormat;
@@ -70,7 +66,7 @@ class RazorpayWebhookIT {
 
     static final String WEBHOOK_SECRET = "a-webhook-secret-for-the-it";
 
-    private static final HttpServer STUB = startStub();
+    private static final GatewayStub STUB = new GatewayStub();
 
     @Autowired
     private MockMvc mockMvc;
@@ -86,36 +82,12 @@ class RazorpayWebhookIT {
 
     @DynamicPropertySource
     static void pointTheProviderAtTheStub(DynamicPropertyRegistry registry) {
-        registry.add("app.payments.razorpay.base-url",
-                () -> "http://localhost:" + STUB.getAddress().getPort());
-    }
-
-    private static HttpServer startStub() {
-        try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-            server.createContext("/v1/orders", exchange -> {
-                exchange.getRequestBody().readAllBytes();
-                // Unique, as a real gateway's ids are: the settlements table has
-                // UNIQUE (gateway_order_id), so a counter would collide between tests.
-                byte[] body = ("{\"id\":\"order_" + UUID.randomUUID().toString()
-                        .replace("-", "").substring(0, 14) + "\",\"status\":\"created\"}")
-                        .getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().add("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, body.length);
-                try (OutputStream out = exchange.getResponseBody()) {
-                    out.write(body);
-                }
-            });
-            server.start();
-            return server;
-        } catch (IOException ex) {
-            throw new IllegalStateException("could not start the Razorpay stub", ex);
-        }
+        registry.add("app.payments.razorpay.base-url", STUB::baseUrl);
     }
 
     @AfterAll
     static void stopStub() {
-        STUB.stop(0);
+        STUB.close();
     }
 
     /** The criterion, raced. */
@@ -210,7 +182,10 @@ class RazorpayWebhookIT {
                         .content(reaimed))
                 .andExpect(status().isBadRequest());
 
-        assertThat(netFor(mine)).isEqualTo(-75_000L);
+        // mine's own group, and only mine's debt: aDebtOf creates a fresh group each
+        // time, so theirs is somewhere else entirely. Asserting the sum of both was how
+        // this test failed in CI while the code under it was correct.
+        assertThat(netFor(mine)).isEqualTo(-45_000L);
     }
 
     @Test
@@ -294,6 +269,13 @@ class RazorpayWebhookIT {
     private record Settle(UUID settlementId, String payerToken, UUID groupId, UUID payerId) {
     }
 
+    /**
+     * Bob owes Alice half of an expense, and a RAZORPAY settlement for it.
+     *
+     * <p>A fresh group, and a fresh pair of accounts, on every call. So a balance
+     * assertion is always about one of these and never about the sum of two -- which
+     * is a mistake worth naming, because it was made here and CI caught it.
+     */
     private Settle aDebtOf(long amountPaise) throws Exception {
         Account alice = newUser("Alice");
         Account bob = newUser("Bob");
