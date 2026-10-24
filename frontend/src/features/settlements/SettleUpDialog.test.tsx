@@ -6,14 +6,19 @@ import { renderWithProviders, SOMEONE } from '../../test/renderWithProviders'
 import { PAYMENT_METHODS } from './methods'
 import { SettleUpDialog } from './SettleUpDialog'
 
-const { createSettlement, startOrder } = vi.hoisted(() => ({
+const { createSettlement, startOrder, gatewayCallback } = vi.hoisted(() => ({
   createSettlement: vi.fn(),
   startOrder: vi.fn(),
+  gatewayCallback: vi.fn(),
 }))
 vi.mock('./useSettlements', () => ({
   useCreateSettlement: () => ({ mutateAsync: createSettlement, isPending: false }),
   useStartOrder: () => ({ mutateAsync: startOrder, isPending: false }),
+  useGatewayCallback: () => ({ mutateAsync: gatewayCallback, isPending: false }),
 }))
+
+const { openCheckout } = vi.hoisted(() => ({ openCheckout: vi.fn() }))
+vi.mock('./checkout', () => ({ openCheckout }))
 
 const { useAppConfig } = vi.hoisted(() => ({ useAppConfig: vi.fn() }))
 vi.mock('../../api/config', () => ({ useAppConfig }))
@@ -49,12 +54,16 @@ describe('SettleUpDialog', () => {
     createSettlement.mockReset()
     createSettlement.mockResolvedValue({ id: 's1' })
     startOrder.mockReset()
-    startOrder.mockResolvedValue({ id: 's1' })
+    startOrder.mockResolvedValue({ id: 's1', gatewayOrderId: 'order_test_1' })
+    gatewayCallback.mockReset()
+    gatewayCallback.mockResolvedValue({ id: 's1', status: 'CONFIRMED' })
+    openCheckout.mockReset()
     // The safe default, which is also what the hook falls back to while loading.
     useAppConfig.mockReturnValue({
       registrationEnabled: false,
       upiIntentEnabled: false,
       demoMode: true,
+      razorpayKeyId: null,
     })
   })
 
@@ -154,5 +163,100 @@ describe('SettleUpDialog', () => {
 
     const options = screen.getAllByRole('option').map((option) => option.textContent)
     expect(options).toEqual(['Bob Stone'])
+  })
+
+  describe('paying by card (SL-605)', () => {
+    const WITH_KEYS = {
+      registrationEnabled: false,
+      upiIntentEnabled: false,
+      demoMode: true,
+      razorpayKeyId: 'rzp_test_public',
+    }
+
+    it('does not offer a card payment when the deployment has no keys', () => {
+      // Without a key the provider is not even created, so an order would be a 502.
+      // Offering a payment the server cannot take is worse than not offering it.
+      renderDialog()
+
+      expect(screen.queryByRole('radio', { name: /Card/ })).not.toBeInTheDocument()
+    })
+
+    it('offers it once the server reports a key', () => {
+      useAppConfig.mockReturnValue(WITH_KEYS)
+      renderDialog()
+
+      expect(screen.getByRole('radio', { name: /Card/ })).toBeInTheDocument()
+    })
+
+    it("shows Razorpay's test cards only once card is the chosen method", async () => {
+      // D4. Nobody memorises test card numbers, and a visitor who reaches the gateway
+      // with nothing to type leaves.
+      useAppConfig.mockReturnValue(WITH_KEYS)
+      renderDialog()
+
+      expect(screen.queryByText('4100 2800 0000 1007')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('radio', { name: /Card/ }))
+
+      expect(screen.getByText('4100 2800 0000 1007')).toBeInTheDocument()
+      expect(screen.getByText(/any future date, any 3 digits/)).toBeInTheDocument()
+    })
+
+    it('opens checkout for the order it just created and posts what comes back', async () => {
+      useAppConfig.mockReturnValue(WITH_KEYS)
+      openCheckout.mockResolvedValue({
+        razorpay_order_id: 'order_test_1',
+        razorpay_payment_id: 'pay_test_1',
+        razorpay_signature: 'a-signature',
+      })
+      renderDialog({ from: SOMEONE.id, to: BOB, amountPaise: 45_000 })
+
+      await userEvent.click(screen.getByRole('radio', { name: /Card/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Record payment' }))
+
+      // The order id comes from the server's response, not from anything the client
+      // invented: it is the only thing a later callback can be matched on.
+      expect(openCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ keyId: 'rzp_test_public', orderId: 'order_test_1' }),
+      )
+      // And the three strings go straight to the server, which verifies the signature
+      // before it believes any of them.
+      expect(gatewayCallback).toHaveBeenCalledWith({
+        settlementId: 's1',
+        callback: {
+          orderId: 'order_test_1',
+          paymentId: 'pay_test_1',
+          signature: 'a-signature',
+        },
+      })
+    })
+
+    it('posts nothing when the payer closes the gateway without paying', async () => {
+      // Abandoning a checkout is normal. The settlement stays pending and its deadline
+      // reclaims it (SL-604); posting a callback here would be inventing a payment.
+      useAppConfig.mockReturnValue(WITH_KEYS)
+      openCheckout.mockResolvedValue(null)
+      renderDialog({ from: SOMEONE.id, to: BOB, amountPaise: 45_000 })
+
+      await userEvent.click(screen.getByRole('radio', { name: /Card/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Record payment' }))
+
+      expect(openCheckout).toHaveBeenCalled()
+      expect(gatewayCallback).not.toHaveBeenCalled()
+    })
+
+    it('says so when the gateway script cannot be loaded', async () => {
+      // Blocked by a content-security policy, an ad blocker, or an offline gateway. What
+      // the payer must not get is a button that silently does nothing.
+      useAppConfig.mockReturnValue(WITH_KEYS)
+      openCheckout.mockRejectedValue(new Error('Could not load the payment gateway'))
+      renderDialog({ from: SOMEONE.id, to: BOB, amountPaise: 45_000 })
+
+      await userEvent.click(screen.getByRole('radio', { name: /Card/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Record payment' }))
+
+      expect(await screen.findByText(/could not record that payment/i)).toBeInTheDocument()
+      expect(gatewayCallback).not.toHaveBeenCalled()
+    })
   })
 })

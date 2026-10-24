@@ -13,6 +13,7 @@ vi.mock('./useExpenses', () => ({ useBalances, useSimplifiedPlan }))
 vi.mock('../settlements/useSettlements', () => ({
   useCreateSettlement: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useStartOrder: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useGatewayCallback: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 const BOB = '22222222-2222-2222-2222-222222222222'

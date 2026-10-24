@@ -23,27 +23,40 @@ public class AppConfigController {
 
     private final boolean registrationEnabled;
     private final boolean upiIntentEnabled;
+    private final String razorpayKeyId;
 
     AppConfigController(
             @Value("${app.registration-enabled}") boolean registrationEnabled,
-            @Value("${app.payments.upi-intent-enabled}") boolean upiIntentEnabled) {
+            @Value("${app.payments.upi-intent-enabled}") boolean upiIntentEnabled,
+            @Value("${app.payments.razorpay.key-id:}") String razorpayKeyId) {
         this.registrationEnabled = registrationEnabled;
         this.upiIntentEnabled = upiIntentEnabled;
+        // Blank becomes null, so "no key" is one value rather than two the client has to
+        // test for separately.
+        this.razorpayKeyId = razorpayKeyId == null || razorpayKeyId.isBlank()
+                ? null
+                : razorpayKeyId.trim();
     }
 
     /**
      * @param demoMode always true in this product, and sent rather than assumed so the
      *     banner has a flag to read instead of being unconditional markup someone could
      *     delete without noticing (ADR-013)
+     * @param razorpayKeyId the public half of the key pair, which Checkout needs in the
+     *     browser to open an order, or null when this deployment has no keys. One field
+     *     rather than a key plus an "enabled" flag: two values can disagree, and the
+     *     disagreement would either offer a card payment that 502s or hide one that works
+     *     (SL-605).
      */
     public record AppConfig(
             boolean registrationEnabled,
             boolean upiIntentEnabled,
-            boolean demoMode) {
+            boolean demoMode,
+            String razorpayKeyId) {
     }
 
     @GetMapping
     public AppConfig config() {
-        return new AppConfig(registrationEnabled, upiIntentEnabled, true);
+        return new AppConfig(registrationEnabled, upiIntentEnabled, true, razorpayKeyId);
     }
 }

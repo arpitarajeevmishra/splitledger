@@ -6,6 +6,14 @@ export type AppConfig = {
   registrationEnabled: boolean
   upiIntentEnabled: boolean
   demoMode: boolean
+  /**
+   * The public half of Razorpay's key pair, or null when this deployment has no keys.
+   *
+   * One field rather than a key plus a separate "enabled" flag: two values can disagree,
+   * and the disagreement either offers a card payment that 502s or hides one that works.
+   * Present means offerable, because the key is exactly what Checkout needs (SL-605).
+   */
+  razorpayKeyId: string | null
 }
 
 export function configApi(client: AxiosInstance = api) {
@@ -24,8 +32,8 @@ const config = configApi()
  * is how a disabled payment path quietly becomes reachable.
  *
  * <p>Falls back to the safest answer while loading or if the call fails: registration
- * closed, UPI off, demo banner shown. A failure to learn the flags must not open
- * anything.
+ * closed, UPI off, no card payments, demo banner shown. A failure to learn the flags must
+ * not open anything.
  */
 export function useAppConfig(): AppConfig {
   const { data } = useQuery<AppConfig>({
@@ -35,5 +43,12 @@ export function useAppConfig(): AppConfig {
     retry: false,
   })
 
-  return data ?? { registrationEnabled: false, upiIntentEnabled: false, demoMode: true }
+  return (
+    data ?? {
+      registrationEnabled: false,
+      upiIntentEnabled: false,
+      demoMode: true,
+      razorpayKeyId: null,
+    }
+  )
 }

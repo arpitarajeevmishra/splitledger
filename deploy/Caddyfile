@@ -38,7 +38,22 @@
 		# Vite emits hashed scripts and no inline ones, so script-src needs no
 		# 'unsafe-inline'. Styles do: Tailwind sets a few inline, and a nonce would mean
 		# rendering the page through a template engine this app does not have.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# Razorpay Checkout is a script from their CDN that opens an iframe and talks to
+		# their API, so script-src 'self' alone blocks the entire payment flow -- and
+		# blocks it only in production, since Vite serves the dev app with no CSP at all
+		# (SL-605).
+		#
+		# Razorpay publish no CSP domain list. This one is derived from the contents of
+		# checkout.js itself, which references cdn, api, checkout-static-next, express and
+		# three lumberjack hosts -- so the subdomain wildcard is both narrower than
+		# guessing and resilient to their churn. It is one vendor's domains, not an open
+		# door.
+		#
+		# UNVERIFIED against a real checkout session: that needs test keys and a browser.
+		# The first real test-mode run should watch the console for CSP violations before
+		# trusting this line. Their Sentry CDN is deliberately not allowed -- their error
+		# reporting failing costs us nothing.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://*.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.razorpay.com; connect-src 'self' https://*.razorpay.com; frame-src https://*.razorpay.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 		# Set by nginx and Caddy both; removed so the stack does not announce itself.
 		-Server

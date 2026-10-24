@@ -6,8 +6,10 @@ import { Button } from '../../components/ui/Button'
 import { Dialog } from '../../components/ui/Dialog'
 import { Field } from '../../components/ui/Field'
 import { formatPaise, safeParsePaise } from '../../lib/money'
+import { openCheckout } from './checkout'
 import { PAYMENT_METHODS } from './methods'
-import { useCreateSettlement, useStartOrder } from './useSettlements'
+import { TestInstruments } from './TestInstruments'
+import { useCreateSettlement, useGatewayCallback, useStartOrder } from './useSettlements'
 
 /**
  * Record a payment towards what you owe.
@@ -31,7 +33,8 @@ export function SettleUpDialog({
 }) {
   const create = useCreateSettlement(group.id)
   const startOrder = useStartOrder(group.id)
-  const { upiIntentEnabled: upiEnabled } = useAppConfig()
+  const gatewayCallback = useGatewayCallback(group.id)
+  const { upiIntentEnabled: upiEnabled, razorpayKeyId } = useAppConfig()
 
   const others = useMemo(
     () => group.members.filter((member) => member.userId !== youId),
@@ -50,8 +53,20 @@ export function SettleUpDialog({
   // bank account against balances that are fiction (ADR-013, risk R9), and an option
   // nobody can choose is still an option somebody can be confused by.
   const available = useMemo(
-    () => PAYMENT_METHODS.filter((option) => option.method !== 'UPI_INTENT' || upiEnabled),
-    [upiEnabled],
+    () =>
+      PAYMENT_METHODS.filter((option) => {
+        if (option.method === 'UPI_INTENT') {
+          return upiEnabled
+        }
+        // No key, no card payment. The provider is not even a bean without one, so an
+        // order would come back a 502 -- offering a payment the server cannot take is
+        // worse than not offering it (SL-605).
+        if (option.method === 'RAZORPAY') {
+          return razorpayKeyId !== null
+        }
+        return true
+      }),
+    [upiEnabled, razorpayKeyId],
   )
 
   const parsed = safeParsePaise(amount)
@@ -75,12 +90,61 @@ export function SettleUpDialog({
       // A gateway method needs an order before anything can confirm it; cash and UPI are
       // settled by people, not providers.
       if (method === 'SANDBOX' || method === 'RAZORPAY') {
-        await startOrder.mutateAsync(settlement.id)
+        const ordered = await startOrder.mutateAsync(settlement.id)
+
+        if (method === 'RAZORPAY') {
+          await payByCard(ordered.gatewayOrderId, settlement.id)
+          return
+        }
       }
       close()
     } catch (error) {
       setFormError(messageFor(error, 'Could not record that payment.'))
     }
+  }
+
+  /**
+   * Open Checkout, and hand what it says back to the server.
+   *
+   * The dialog stays open until this resolves, because closing it would leave the payer
+   * looking at a balance that has not moved yet with nothing to explain why.
+   *
+   * Nothing here is trusted: the three strings Checkout hands over are posted to the
+   * server, which verifies the signature and matches the order against the one it stored
+   * before it will confirm anything (SL-602). The browser's word is a claim, not proof.
+   */
+  async function payByCard(orderId: string | null, settlementId: string) {
+    if (razorpayKeyId === null || orderId === null) {
+      // Neither is reachable through the UI -- the method is filtered out without a key,
+      // and an order was just created. Checked because the alternative is opening a
+      // gateway modal with an undefined order id.
+      setFormError('Card payments are not configured here.')
+      return
+    }
+
+    const answer = await openCheckout({
+      keyId: razorpayKeyId,
+      orderId,
+      amountPaise,
+      groupName: group.name,
+    })
+
+    if (answer === null) {
+      // Dismissed without paying. The settlement stays pending and its deadline will
+      // reclaim it (SL-604), so there is nothing to undo and nothing to apologise for.
+      close()
+      return
+    }
+
+    await gatewayCallback.mutateAsync({
+      settlementId,
+      callback: {
+        orderId: answer.razorpay_order_id,
+        paymentId: answer.razorpay_payment_id,
+        signature: answer.razorpay_signature,
+      },
+    })
+    close()
   }
 
   return (
@@ -96,6 +160,7 @@ export function SettleUpDialog({
         Test mode
       </p>
       <div className="flex flex-col gap-4">
+        {method === 'RAZORPAY' && <TestInstruments />}
         <div className="flex flex-col gap-2">
           <label
             htmlFor="settle-to"
