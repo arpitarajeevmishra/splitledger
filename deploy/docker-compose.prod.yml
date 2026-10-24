@@ -59,6 +59,7 @@ services:
       # sandbox answers instead.
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
       # The development defaults poll every five seconds and sweep every minute, which
       # is exactly the "pinging to hold the compute awake" that application.yml's Hikari
       # comment refuses to do -- it just arrives via the scheduler instead of the pool.

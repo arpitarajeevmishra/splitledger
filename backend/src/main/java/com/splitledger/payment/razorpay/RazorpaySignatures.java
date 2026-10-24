@@ -69,4 +69,32 @@ final class RazorpaySignatures {
     static String callbackPayload(String orderId, String paymentId) {
         return orderId + '|' + paymentId;
     }
+
+    /**
+     * Whether {@code presented} is the signature over these exact bytes.
+     *
+     * <p>Bytes, not a String built from them: a webhook signature covers the octets the
+     * provider transmitted. Decoding to a String and re-encoding is usually lossless and
+     * occasionally is not, and parsing then re-serialising never is -- key order, spacing
+     * and number formatting all change, and the MAC changes with them.
+     */
+    static boolean matchesRaw(byte[] payload, String secret, String presented) {
+        if (presented == null) {
+            return false;
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] expected = HexFormat.of().formatHex(mac.doFinal(payload))
+                    .getBytes(StandardCharsets.UTF_8);
+            byte[] offered = presented.trim().toLowerCase(Locale.ROOT)
+                    .getBytes(StandardCharsets.UTF_8);
+            return MessageDigest.isEqual(expected, offered);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("HmacSHA256 is required by the JDK", ex);
+        } catch (InvalidKeyException ex) {
+            throw new IllegalStateException("The Razorpay webhook secret is not a usable HMAC key",
+                    ex);
+        }
+    }
 }
