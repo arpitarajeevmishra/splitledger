@@ -169,6 +169,18 @@ app:
       auto-confirm-delay: ${SANDBOX_AUTO_CONFIRM_DELAY:PT10S}
     # How often settlement asks polling providers whether their orders went through.
     poll-cron: ${PAYMENTS_POLL_CRON:*/5 * * * * *}
+    razorpay:
+      # Test-mode keys (SL-601). Absent by default, and the provider is then not a bean at
+      # all: the demo has to start and settle through the sandbox without an account
+      # (ADR-013). key-id is public -- Checkout needs it in the browser -- and key-secret
+      # never leaves the server.
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      # Overridable so a test can point at a stub. Changing it in production needs the
+      # deployment's own configuration, which is the same trust boundary as the key.
+      base-url: ${RAZORPAY_BASE_URL:https://api.razorpay.com}
+      connect-timeout: ${RAZORPAY_CONNECT_TIMEOUT:PT2S}
+      read-timeout: ${RAZORPAY_READ_TIMEOUT:PT10S}
 
 ---
 # Publishing the full surface of a money API to the internet buys nothing
