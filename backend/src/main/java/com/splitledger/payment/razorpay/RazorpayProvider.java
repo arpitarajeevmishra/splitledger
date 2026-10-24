@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -44,7 +44,14 @@ import org.springframework.web.client.RestClientException;
  * has already done, which is a second source of truth about a settlement.
  */
 @Component
-@ConditionalOnProperty(prefix = "app.payments.razorpay", name = "key-id")
+// Non-empty, not merely present. application.yml defines key-id as ${RAZORPAY_KEY_ID:},
+// so with no environment variable the property exists with an empty value -- and
+// @ConditionalOnProperty matches any present value that is not "false". That built this
+// bean in every deployment and every test context that had no keys, where the constructor
+// below then refused to start the application at all. The condition has to ask what the
+// code actually cares about, which is whether there is a key, not whether someone wrote
+// the line in the YAML.
+@ConditionalOnExpression("'${app.payments.razorpay.key-id:}'.trim() != ''")
 public class RazorpayProvider implements PaymentProvider {
 
     private static final Logger log = LoggerFactory.getLogger(RazorpayProvider.class);
@@ -70,8 +77,11 @@ public class RazorpayProvider implements PaymentProvider {
             ObjectMapper json) {
         this.json = json;
         if (!properties.configured()) {
-            // The @ConditionalOnProperty above only sees key-id. A key id with no secret
-            // would otherwise authenticate as nobody and fail on the first order.
+            // Reached only when there really is a key id and no secret, which is a
+            // deployment someone half-finished. Failing at startup is right for that: the
+            // alternative is a provider that authenticates as nobody and 502s the first
+            // payment someone tries. The condition above is what keeps a *keyless*
+            // deployment from ever getting here.
             throw new IllegalStateException(
                     "app.payments.razorpay.key-id is set but key-secret is not");
         }
