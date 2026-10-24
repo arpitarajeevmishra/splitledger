@@ -40,9 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SettlementService {
 
-    /** Razorpay will not take less than a rupee; we say so ourselves (LLD 7.4, finding C5). */
-    public static final long GATEWAY_MINIMUM_PAISE = 100L;
-
     private final SettlementRepository settlements;
     private final GroupMemberRepository members;
     private final GroupAccessGuard guard;
@@ -317,12 +314,20 @@ public class SettlementService {
         }
     }
 
+    /**
+     * Refuse an amount the chosen provider would refuse, here rather than at the gateway
+     * (LLD 7.4, finding C5).
+     *
+     * <p>The floor comes from the method, which both this module and the payment module
+     * can see. It used to be a constant here next to a test for {@code == RAZORPAY}, which
+     * put Razorpay's commercial terms in the settlement module and the same figure in two
+     * places once the provider needed it too.
+     */
     private void requireGatewayMinimum(PaymentMethod method, long amountPaise) {
-        if (method == PaymentMethod.RAZORPAY && amountPaise < GATEWAY_MINIMUM_PAISE) {
-            // Refused here with our own error rather than by an opaque gateway failure
-            // several steps later (finding C5).
+        long minimum = method.minimumPaise();
+        if (amountPaise < minimum) {
             throw new ApiException(ErrorCode.SETTLEMENT_BELOW_GATEWAY_MINIMUM,
-                    "Card payments start at " + Money.ofPaise(GATEWAY_MINIMUM_PAISE));
+                    "Card payments start at " + Money.ofPaise(minimum));
         }
     }
 

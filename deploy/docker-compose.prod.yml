@@ -55,6 +55,10 @@ services:
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       # The only method that could reach a real bank account (ADR-013).
       PAYMENTS_UPI_INTENT_ENABLED: ${PAYMENTS_UPI_INTENT_ENABLED:-false}
+      # Test-mode Razorpay (SL-601). Blank by default: no keys, no provider, and the
+      # sandbox answers instead.
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       # The development defaults poll every five seconds and sweep every minute, which
       # is exactly the "pinging to hold the compute awake" that application.yml's Hikari
       # comment refuses to do -- it just arrives via the scheduler instead of the pool.
