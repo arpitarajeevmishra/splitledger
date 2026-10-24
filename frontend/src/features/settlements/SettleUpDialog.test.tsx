@@ -15,6 +15,9 @@ vi.mock('./useSettlements', () => ({
   useStartOrder: () => ({ mutateAsync: startOrder, isPending: false }),
 }))
 
+const { useAppConfig } = vi.hoisted(() => ({ useAppConfig: vi.fn() }))
+vi.mock('../../api/config', () => ({ useAppConfig }))
+
 const BOB = '22222222-2222-2222-2222-222222222222'
 
 const GROUP: GroupDetail = {
@@ -47,6 +50,12 @@ describe('SettleUpDialog', () => {
     createSettlement.mockResolvedValue({ id: 's1' })
     startOrder.mockReset()
     startOrder.mockResolvedValue({ id: 's1' })
+    // The safe default, which is also what the hook falls back to while loading.
+    useAppConfig.mockReturnValue({
+      registrationEnabled: false,
+      upiIntentEnabled: false,
+      demoMode: true,
+    })
   })
 
   it('says no real money moves, whatever is selected', () => {
@@ -63,12 +72,34 @@ describe('SettleUpDialog', () => {
     expect(PAYMENT_METHODS.every((option) => !option.movesRealMoney)).toBe(true)
   })
 
-  it('disables UPI and explains why rather than hiding it', () => {
+  it('does not offer UPI when the server has it switched off', () => {
+    // Absent, not disabled. It is the one method that could reach a real bank account
+    // against balances that are fiction (ADR-013, risk R9), and an option nobody can
+    // choose is still an option somebody can be confused by.
     renderDialog()
 
-    const upi = screen.getByRole('radio', { name: /UPI/ })
-    expect(upi).toBeDisabled()
-    expect(screen.getByText(/Switched off here/i)).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /UPI/ })).not.toBeInTheDocument()
+  })
+
+  it('offers UPI when the server says it is enabled', () => {
+    useAppConfig.mockReturnValue({
+      registrationEnabled: false,
+      upiIntentEnabled: true,
+      demoMode: true,
+    })
+    renderDialog()
+
+    // Read from the server rather than compiled in: a method the backend would accept is
+    // never hidden, and one it would refuse is never offered.
+    expect(screen.getByRole('radio', { name: /UPI/ })).toBeInTheDocument()
+  })
+
+  it('badges the payment surface as test mode', () => {
+    renderDialog()
+
+    // The page banner says the product is a demo; this says it about the screen someone
+    // is about to pay on (D3).
+    expect(screen.getByText('Test mode')).toBeInTheDocument()
   })
 
   it('pre-fills from the simplified plan', () => {
