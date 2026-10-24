@@ -45,4 +45,26 @@ class PaymentMethodTest {
         // argued for rather than inherited.
         assertThat(method.minimumPaise() > 0L).isEqualTo(method.isGateway());
     }
+
+    @Test
+    void theSandboxIsTheOnlyMethodWhereNoMoneyMoves() {
+        // Cash in a room is real money. The sandbox is the only fiction, and that is what
+        // decides whether a confirmation reporting "paid" is a fact or a story the demo is
+        // telling itself (SL-604, ADR-010 as narrowed).
+        assertThat(PaymentMethod.SANDBOX.movesRealMoney()).isFalse();
+        assertThat(PaymentMethod.RAZORPAY.movesRealMoney()).isTrue();
+        assertThat(PaymentMethod.CASH.movesRealMoney()).isTrue();
+        assertThat(PaymentMethod.UPI_INTENT.movesRealMoney()).isTrue();
+    }
+
+    @ParameterizedTest
+    @EnumSource(PaymentMethod.class)
+    void onlyTheSandboxMayClaimNoMoneyMoves(PaymentMethod method) {
+        // A new method arriving with movesRealMoney false would silently inherit the
+        // sandbox's exemption from the net-balance re-check. If that is ever right, it
+        // should be argued for here rather than inherited.
+        if (!method.movesRealMoney()) {
+            assertThat(method).isEqualTo(PaymentMethod.SANDBOX);
+        }
+    }
 }

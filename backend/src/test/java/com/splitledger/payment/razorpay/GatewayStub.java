@@ -23,12 +23,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>A real gateway never reissues an order id either, so the random id is also the more
  * faithful stand-in.
  */
-final class GatewayStub implements AutoCloseable {
+public final class GatewayStub implements AutoCloseable {
 
     private final HttpServer server;
     private final List<String> orders = new CopyOnWriteArrayList<>();
 
-    GatewayStub() {
+    public GatewayStub() {
         try {
             server = HttpServer.create(new InetSocketAddress(0), 0);
         } catch (IOException ex) {
@@ -53,16 +53,16 @@ final class GatewayStub implements AutoCloseable {
         return "order_" + UUID.randomUUID().toString().replace("-", "").substring(0, 14);
     }
 
-    String baseUrl() {
+    public String baseUrl() {
         return "http://localhost:" + server.getAddress().getPort();
     }
 
     /** The bodies of every order request, in arrival order. */
-    List<String> ordersReceived() {
+    public List<String> ordersReceived() {
         return List.copyOf(orders);
     }
 
-    void forgetOrdersReceived() {
+    public void forgetOrdersReceived() {
         orders.clear();
     }
 
