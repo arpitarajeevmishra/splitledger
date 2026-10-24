@@ -5,9 +5,11 @@ import com.splitledger.common.errors.ErrorCode;
 import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.payment.port.PaymentProvider;
 import com.splitledger.payment.port.PaymentRequest;
+import com.splitledger.payment.port.ProviderCallback;
 import com.splitledger.payment.port.ProviderOrder;
 import java.net.http.HttpClient;
 import java.util.Map;
+import java.util.Optional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -46,6 +48,7 @@ public class RazorpayProvider implements PaymentProvider {
 
     private final RestClient client;
     private final ObjectMapper json;
+    private final String keySecret;
 
     @Autowired
     RazorpayProvider(RazorpayProperties properties, ObjectMapper json) {
@@ -68,6 +71,7 @@ public class RazorpayProvider implements PaymentProvider {
             throw new IllegalStateException(
                     "app.payments.razorpay.key-id is set but key-secret is not");
         }
+        this.keySecret = properties.keySecret();
         this.client = builder
                 .baseUrl(properties.baseUrl())
                 // Basic auth, which is what Razorpay's API takes: the key id as the user
@@ -80,6 +84,30 @@ public class RazorpayProvider implements PaymentProvider {
     @Override
     public PaymentMethod method() {
         return PaymentMethod.RAZORPAY;
+    }
+
+    /**
+     * Razorpay signs {@code order_id|payment_id} with the API secret and Checkout hands the
+     * result to the page. Verifying it here is what turns "the browser says it paid" into
+     * something this application may act on.
+     *
+     * <p>Says nothing about whether the order belongs to the settlement being confirmed:
+     * the caller holds the stored order id and must compare it. A signature is proof that
+     * Razorpay said these words, not proof that they are about the right debt.
+     */
+    @Override
+    public Optional<String> verifiedPaymentId(ProviderCallback callback) {
+        if (callback.orderId() == null || callback.paymentId() == null) {
+            // Nothing to sign, so nothing can verify. Hashing nulls into the payload would
+            // produce a digest that happily matches a forged signature over "null|null".
+            return Optional.empty();
+        }
+        String payload = RazorpaySignatures.callbackPayload(callback.orderId(),
+                callback.paymentId());
+        if (!RazorpaySignatures.matches(payload, keySecret, callback.signature())) {
+            return Optional.empty();
+        }
+        return Optional.of(callback.paymentId());
     }
 
     @Override

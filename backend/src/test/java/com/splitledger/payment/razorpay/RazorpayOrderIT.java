@@ -74,6 +74,9 @@ class RazorpayOrderIT {
     @Autowired
     private ExpenseService expenses;
 
+    @Autowired
+    private com.splitledger.ledger.application.LedgerService ledger;
+
     @DynamicPropertySource
     static void pointTheProviderAtTheStub(DynamicPropertyRegistry registry) {
         registry.add("app.payments.razorpay.base-url",
@@ -181,10 +184,143 @@ class RazorpayOrderIT {
         assertThat(RECEIVED).as("nothing left the building").isEmpty();
     }
 
+    @Test
+    void aTamperedSignatureChangesNothing() throws Exception {
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+
+        String genuine = sign(orderId + "|pay_stub_1");
+        String tampered = (genuine.charAt(0) == 'a' ? 'b' : 'a') + genuine.substring(1);
+
+        mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + settle.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback(orderId, "pay_stub_1", tampered)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_SIGNATURE_INVALID"));
+
+        // "Nothing changes" is the acceptance criterion, so it is checked rather than
+        // assumed: still pending, no payment id recorded, and no ledger entry.
+        mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + settle.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback(orderId, "pay_stub_1", tampered)))
+                .andExpect(status().isBadRequest());
+
+        // The debt is still exactly the debt: a tampered callback moved no money.
+        assertThat(netFor(settle))
+                .as("a tampered callback changed no balance")
+                .isEqualTo(-45_000L);
+    }
+
+    @Test
+    void aGenuineCallbackConfirmsAndIsIdempotent() throws Exception {
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+        String signature = sign(orderId + "|pay_stub_1");
+
+        mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + settle.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback(orderId, "pay_stub_1", signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.gatewayPaymentId").value("pay_stub_1"));
+
+        // A reloaded result page posts again. It must not post to the ledger twice.
+        mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + settle.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback(orderId, "pay_stub_1", signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+
+        // Settled, and settled once: a second posting would swing the payer into credit.
+        assertThat(netFor(settle))
+                .as("settled once, however many times the browser came back")
+                .isZero();
+    }
+
+    @Test
+    void aGenuineCallbackForSomeoneElsesOrderIsRefused() throws Exception {
+        // The break this check exists for: a real callback for a payment of their own,
+        // correctly signed, posted against a settlement it has nothing to do with. The
+        // signature verifies; the stored order id does not match.
+        Settle mine = aDebtOf(45_000L);
+        order(mine);
+
+        Settle theirs = aDebtOf(60_000L);
+        String theirOrder = order(theirs);
+        String signedForTheirs = sign(theirOrder + "|pay_stub_theirs");
+
+        mockMvc.perform(post("/api/v1/settlements/" + mine.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + mine.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback(theirOrder, "pay_stub_theirs", signedForTheirs)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PAYMENT_SIGNATURE_INVALID"));
+    }
+
+    @Test
+    void aCallbackBeforeAnyOrderExistsIsRefused() throws Exception {
+        Settle settle = aDebtOf(45_000L);
+        // No gateway-order call, so there is nothing stored to compare against.
+
+        mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-callback")
+                        .header("Authorization", "Bearer " + settle.payerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(callback("order_invented", "pay_invented",
+                                sign("order_invented|pay_invented"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVALID_STATE_TRANSITION"));
+    }
+
+    /** The payer's net position in the group, read back from the ledger. */
+    private long netFor(Settle settle) {
+        return ledger.postingsFor(settle.groupId()).stream()
+                .filter(posting -> posting.userId().equals(settle.payerId()))
+                .mapToLong(posting -> posting.amount().paise())
+                .sum();
+    }
+
+    /** The order id the gateway issued for this settlement. */
+    private String order(Settle settle) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+                        + "/gateway-order")
+                        .header("Authorization", "Bearer " + settle.payerToken()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.gatewayOrderId");
+    }
+
+    /** Razorpay's scheme, with the secret this context is configured with. */
+    private static String sign(String payload) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    "stub-secret".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return java.util.HexFormat.of()
+                    .formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static String callback(String orderId, String paymentId, String signature) {
+        return "{\"orderId\":\"" + orderId + "\",\"paymentId\":\"" + paymentId
+                + "\",\"signature\":\"" + signature + "\"}";
+    }
+
     private record Account(String token, UUID id) {
     }
 
-    private record Settle(UUID settlementId, String payerToken) {
+    private record Settle(UUID settlementId, String payerToken, UUID groupId, UUID payerId) {
     }
 
     /** Bob owes Alice half of an expense, and a RAZORPAY settlement for it. */
@@ -206,7 +342,8 @@ class RazorpayOrderIT {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        return new Settle(UUID.fromString(JsonPath.read(created, "$.id")), bob.token());
+        return new Settle(UUID.fromString(JsonPath.read(created, "$.id")), bob.token(),
+                groupId, bob.id());
     }
 
     private Account newUser(String label) throws Exception {
