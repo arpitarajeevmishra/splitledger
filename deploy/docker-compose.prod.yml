@@ -55,6 +55,15 @@ services:
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       # The only method that could reach a real bank account (ADR-013).
       PAYMENTS_UPI_INTENT_ENABLED: ${PAYMENTS_UPI_INTENT_ENABLED:-false}
+      # The development defaults poll every five seconds and sweep every minute, which
+      # is exactly the "pinging to hold the compute awake" that application.yml's Hikari
+      # comment refuses to do -- it just arrives via the scheduler instead of the pool.
+      # Managed Postgres suspends after five minutes idle and bills the allowance by the
+      # hour it stays awake, so the deployed crons are spaced to leave it asleep and
+      # aligned to the same wake window: one compute start serves all three.
+      PAYMENTS_POLL_CRON: "${PAYMENTS_POLL_CRON:-0 */15 * * * *}"
+      SETTLEMENT_EXPIRY_CRON: "${SETTLEMENT_EXPIRY_CRON:-0 0 * * * *}"
+      IDEMPOTENCY_PURGE_CRON: "${IDEMPOTENCY_PURGE_CRON:-0 0 3 * * *}"
       CORS_ALLOWED_ORIGINS: https://${DOMAIN}
       COOKIE_SECURE: "true"
       INVITE_BASE_URL: https://${DOMAIN}

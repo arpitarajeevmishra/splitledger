@@ -2,7 +2,11 @@
 # a JDK, Maven, and the whole dependency cache. The difference is roughly 600MB of
 # attack surface that never needed to leave the builder.
 
-FROM eclipse-temurin:27-jdk-alpine AS build
+# --platform=$BUILDPLATFORM pins the build stage to the runner's own architecture. A jar
+# is architecture-independent, so compiling it under QEMU emulation for arm64 would spend
+# twenty minutes to produce a byte-identical artifact. Only the runtime stage below is
+# built per target architecture, and all it does is copy that jar into the matching JRE.
+FROM --platform=$BUILDPLATFORM eclipse-temurin:27-jdk-alpine AS build
 WORKDIR /build
 
 # Dependencies first: this layer is cached unless the pom changes, so an ordinary code
