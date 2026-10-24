@@ -64,4 +64,24 @@ public interface PaymentProvider {
     default Optional<String> verifiedPaymentId(ProviderCallback callback) {
         return Optional.empty();
     }
+
+    /**
+     * Is this webhook delivery genuinely from the provider, and what does it say?
+     *
+     * <p>Unlike a client callback, a webhook arrives from the provider's own servers with
+     * no user session behind it, and it is the authority on whether money moved: it is
+     * delivered whether or not the payer's browser ever came back. Which is exactly why it
+     * is also the most attractive thing on this application to forge, and why the raw
+     * bytes are passed through unparsed -- the signature covers those octets and nothing
+     * else.
+     *
+     * <p>Empty by default, so a provider with no webhook scheme cannot be driven by an
+     * unauthenticated POST. Same direction as everything else here: a provider that cannot
+     * verify must not be able to confirm.
+     *
+     * @return what the delivery says, once the signature over the raw body holds
+     */
+    default Optional<ProviderEvent> verifiedEvent(ProviderWebhook webhook) {
+        return Optional.empty();
+    }
 }

@@ -30,7 +30,7 @@ class RazorpaySignatureTest {
     private static final String PAYMENT = "pay_IluGWxBm9U8zJ8";
 
     private final RazorpayProvider provider = new RazorpayProvider(
-            new RazorpayProperties("rzp_test_key", SECRET, "https://stub.invalid",
+            new RazorpayProperties("rzp_test_key", SECRET, "a-webhook-secret", "https://stub.invalid",
                     Duration.ofSeconds(2), Duration.ofSeconds(10)),
             RestClient.builder(), new ObjectMapper());
 

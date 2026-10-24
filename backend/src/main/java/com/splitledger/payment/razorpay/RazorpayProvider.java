@@ -1,11 +1,14 @@
 package com.splitledger.payment.razorpay;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
 import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.payment.port.PaymentProvider;
 import com.splitledger.payment.port.PaymentRequest;
 import com.splitledger.payment.port.ProviderCallback;
+import com.splitledger.payment.port.ProviderEvent;
+import com.splitledger.payment.port.ProviderWebhook;
 import com.splitledger.payment.port.ProviderOrder;
 import java.net.http.HttpClient;
 import java.util.Map;
@@ -49,6 +52,7 @@ public class RazorpayProvider implements PaymentProvider {
     private final RestClient client;
     private final ObjectMapper json;
     private final String keySecret;
+    private final String webhookSecret;
 
     @Autowired
     RazorpayProvider(RazorpayProperties properties, ObjectMapper json) {
@@ -72,6 +76,7 @@ public class RazorpayProvider implements PaymentProvider {
                     "app.payments.razorpay.key-id is set but key-secret is not");
         }
         this.keySecret = properties.keySecret();
+        this.webhookSecret = properties.webhookSecret();
         this.client = builder
                 .baseUrl(properties.baseUrl())
                 // Basic auth, which is what Razorpay's API takes: the key id as the user
@@ -108,6 +113,58 @@ public class RazorpayProvider implements PaymentProvider {
             return Optional.empty();
         }
         return Optional.of(callback.paymentId());
+    }
+
+    /**
+     * Razorpay signs the delivery body with the webhook secret and sends the digest in
+     * {@code X-Razorpay-Signature}; the de-duplication key is {@code X-Razorpay-Event-Id},
+     * which is a header and not a body field.
+     *
+     * <p>A delivery with no event id is refused even when its signature is perfect. Without
+     * one there is no way to recognise the same delivery twice, and Razorpay retries --
+     * accepting it would mean accepting something that cannot be made idempotent, which
+     * for a ledger posting is the one thing that must not happen.
+     */
+    @Override
+    public Optional<ProviderEvent> verifiedEvent(ProviderWebhook webhook) {
+        if (webhookSecret == null || webhookSecret.isBlank()) {
+            // Keys configured but no webhook secret: every delivery is unverifiable, so
+            // every delivery is refused. Louder than it looks -- the alternative is a
+            // gateway endpoint that trusts whatever arrives.
+            log.warn("A Razorpay webhook arrived but no webhook secret is configured");
+            return Optional.empty();
+        }
+        if (!RazorpaySignatures.matchesRaw(webhook.rawBody(), webhookSecret,
+                webhook.header("x-razorpay-signature"))) {
+            return Optional.empty();
+        }
+
+        String eventId = webhook.header("x-razorpay-event-id");
+        if (eventId == null || eventId.isBlank()) {
+            log.warn("A signed Razorpay webhook arrived with no event id and cannot be "
+                    + "de-duplicated");
+            return Optional.empty();
+        }
+
+        Event event;
+        try {
+            event = json.readValue(webhook.rawBody(), Event.class);
+        } catch (JacksonException ex) {
+            // Signed, so it really is from Razorpay, and still unreadable. Worth a log line
+            // rather than a silent refusal: this is our parser disagreeing with their
+            // payload, not an attack.
+            log.warn("A signed Razorpay webhook could not be parsed", ex);
+            return Optional.empty();
+        }
+
+        String orderId = event.orderId();
+        String paymentId = event.paymentId();
+        if (orderId == null || paymentId == null) {
+            // An event about something other than a payment on an order. Verified, and
+            // nothing this application can act on.
+            return Optional.of(new ProviderEvent(eventId, event.event(), null, null));
+        }
+        return Optional.of(new ProviderEvent(eventId, event.event(), orderId, paymentId));
     }
 
     @Override
@@ -195,5 +252,38 @@ public class RazorpayProvider implements PaymentProvider {
      * them all would make a new field in their response a deserialisation failure here.
      */
     record OrderResponse(String id, String status) {
+    }
+
+    /**
+     * The shape of a webhook body, as far as this cares: the event name, and the payment
+     * entity buried under {@code payload.payment.entity}.
+     *
+     * <p>Nested records rather than a map walk, so a change in their structure is a
+     * compile-time concern here instead of a chain of null checks at the call site.
+     */
+    record Event(String event, Payload payload) {
+
+        String orderId() {
+            return payment() == null ? null : payment().orderId();
+        }
+
+        String paymentId() {
+            return payment() == null ? null : payment().id();
+        }
+
+        private PaymentEntity payment() {
+            return payload == null || payload.payment() == null
+                    ? null
+                    : payload.payment().entity();
+        }
+    }
+
+    record Payload(PaymentWrapper payment) {
+    }
+
+    record PaymentWrapper(PaymentEntity entity) {
+    }
+
+    record PaymentEntity(String id, @JsonProperty("order_id") String orderId, String status) {
     }
 }

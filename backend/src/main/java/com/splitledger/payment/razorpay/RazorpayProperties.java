@@ -15,6 +15,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * send real orders elsewhere is to change the deployment's own configuration, which is the
  * same trust boundary as the key itself.
  *
+ * <p>{@code webhookSecret} is a third, separate secret: Razorpay signs webhook deliveries
+ * with the value configured in their dashboard, not with the API key secret. Using one for
+ * the other is a mistake that looks like a verification failure, so they are named apart.
+ *
  * @param baseUrl Razorpay's API root, no trailing slash
  * @param connectTimeout how long to wait for the socket. Short: a gateway that cannot be
  *     reached in two seconds is not going to be reached.
@@ -25,6 +29,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RazorpayProperties(
         String keyId,
         String keySecret,
+        String webhookSecret,
         String baseUrl,
         Duration connectTimeout,
         Duration readTimeout) {

@@ -42,7 +42,7 @@ class RazorpayProviderTest {
     private MockRestServiceServer server;
 
     private RazorpayProvider provider() {
-        return provider(new RazorpayProperties("rzp_test_key", "secret", "https://stub.invalid",
+        return provider(new RazorpayProperties("rzp_test_key", "secret", "a-webhook-secret", "https://stub.invalid",
                 Duration.ofSeconds(2), Duration.ofSeconds(10)));
     }
 
@@ -166,7 +166,7 @@ class RazorpayProviderTest {
     void refusesToStartWithHalfAKeyPair() {
         // @ConditionalOnProperty only sees key-id, so a secret left blank would otherwise
         // produce a provider that authenticates as nobody and 502s on the first payment.
-        assertThatThrownBy(() -> provider(new RazorpayProperties("rzp_test_key", "  ", null,
+        assertThatThrownBy(() -> provider(new RazorpayProperties("rzp_test_key", "  ", null, null,
                 null, null)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("key-secret");
@@ -176,13 +176,13 @@ class RazorpayProviderTest {
     void trimsATrailingSlashSoTheOrdersPathIsNotDoubled() {
         // baseUrl + "/v1/orders" with a trailing slash gives //v1/orders, which Razorpay
         // answers with a 404 that looks like a missing endpoint rather than a typo.
-        assertThat(new RazorpayProperties("k", "s", "https://api.razorpay.com/", null, null)
+        assertThat(new RazorpayProperties("k", "s", null, "https://api.razorpay.com/", null, null)
                 .baseUrl()).isEqualTo("https://api.razorpay.com");
     }
 
     @Test
     void defaultsTheEndpointAndTheTimeoutsRatherThanLeavingThemNull() {
-        RazorpayProperties defaults = new RazorpayProperties("k", "s", null, null, null);
+        RazorpayProperties defaults = new RazorpayProperties("k", "s", null, null, null, null);
         assertThat(defaults.baseUrl()).isEqualTo("https://api.razorpay.com");
         assertThat(defaults.connectTimeout()).isEqualTo(Duration.ofSeconds(2));
         assertThat(defaults.readTimeout()).isEqualTo(Duration.ofSeconds(10));

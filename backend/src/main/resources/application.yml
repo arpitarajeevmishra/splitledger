@@ -176,6 +176,11 @@ app:
       # never leaves the server.
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}
+      # A third secret, separate from the key pair: Razorpay signs webhook deliveries with
+      # the value configured in their dashboard. With it unset every delivery is refused,
+      # which is the safe direction -- the alternative is a public endpoint that believes
+      # whatever arrives (SL-603).
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
       # Overridable so a test can point at a stub. Changing it in production needs the
       # deployment's own configuration, which is the same trust boundary as the key.
       base-url: ${RAZORPAY_BASE_URL:https://api.razorpay.com}

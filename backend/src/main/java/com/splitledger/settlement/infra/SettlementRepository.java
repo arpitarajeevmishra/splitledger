@@ -24,6 +24,16 @@ public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
     @Query("select s.groupId from Settlement s where s.id = :settlementId")
     Optional<UUID> findGroupIdById(@Param("settlementId") UUID settlementId);
 
+    /**
+     * The only way a webhook reaches a settlement (SL-603, finding B6).
+     *
+     * <p>By the order id this application stored when it created the order -- never by a
+     * settlement id read out of the delivery. A signed event proves the provider said
+     * something; it does not make a receipt field inside it safe to use as a primary key
+     * lookup. The column is UNIQUE, so this can match at most one.
+     */
+    Optional<Settlement> findByGatewayOrderId(String gatewayOrderId);
+
     /** Sandbox settlements waiting for their stand-in gateway to answer. */
     List<Settlement> findAllByMethodAndStatus(PaymentMethod method, SettlementStatus status);
 
