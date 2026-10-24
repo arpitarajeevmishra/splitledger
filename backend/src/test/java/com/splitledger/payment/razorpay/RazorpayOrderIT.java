@@ -1,6 +1,8 @@
 package com.splitledger.payment.razorpay;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -91,22 +93,25 @@ class RazorpayOrderIT {
     void anOrderIsCreatedOnceAndTheSecondAskReturnsIt() throws Exception {
         Settle settle = aDebtOf(45_000L);
 
-        String first = mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
+        String body = mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId()
                         + "/gateway-order")
                         .header("Authorization", "Bearer " + settle.payerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.gatewayOrderId").value(
-                        org.hamcrest.Matchers.startsWith("order_")))
+                .andExpect(jsonPath("$.gatewayOrderId").value(startsWith("order_")))
                 .andReturn().getResponse().getContentAsString();
+        // Bound to a String deliberately. jsonPath().value() is overloaded for Object and
+        // for Matcher, and JsonPath.read is generic -- passed inline, javac infers Matcher
+        // from the target type and the String blows up at runtime with a ClassCastException
+        // that says nothing about the real mistake.
+        String firstOrderId = JsonPath.read(body, "$.gatewayOrderId");
 
         // Asked again, as a client retrying after a dropped response would. Two orders
         // against one debt is two payments the payer did not intend to make (LLD 8).
         mockMvc.perform(post("/api/v1/settlements/" + settle.settlementId() + "/gateway-order")
                         .header("Authorization", "Bearer " + settle.payerToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.gatewayOrderId")
-                        .value(JsonPath.read(first, "$.gatewayOrderId")));
+                .andExpect(jsonPath("$.gatewayOrderId").value(firstOrderId));
 
         assertThat(STUB.ordersReceived())
                 .as("Razorpay was asked exactly once, however often the client asked us")
@@ -128,8 +133,7 @@ class RazorpayOrderIT {
                 // The sandbox makes ids like sandbox_<uuid>. Reaching the stub at all is
                 // the proof that method selection, not bean ordering, decided this -- so
                 // the assertion is that the stub was called, not that the id is a literal.
-                .andExpect(jsonPath("$.gatewayOrderId").value(
-                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith("sandbox_"))));
+                .andExpect(jsonPath("$.gatewayOrderId").value(not(startsWith("sandbox_"))));
 
         assertThat(STUB.ordersReceived()).hasSize(1);
     }
