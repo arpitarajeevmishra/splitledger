@@ -72,6 +72,21 @@ export TAG
 # instead of returning success and leaving a crash-looping container behind.
 docker compose -f docker-compose.prod.yml pull --quiet
 docker compose -f docker-compose.prod.yml up -d --wait --remove-orphans
+
+# Record what is now deployed. Compose reads TAG from this file, so without this line a
+# later `docker compose up -d api` -- which is how the kill switches are meant to be
+# flipped (SL-906) -- would quietly pull whatever :latest had become and un-pin the host
+# from a known commit. Written only after --wait succeeded, so a failed deploy leaves the
+# previous working SHA in place, which is the one a restart should bring back.
+if grep -q '^TAG=' .env; then
+  sed -i "s|^TAG=.*|TAG=${TAG}|" .env
+else
+  printf 'TAG=%s\n' "$TAG" >> .env
+fi
+# sed -i writes through a temporary file, so restate the mode rather than trusting it to
+# have been carried across.
+chmod 600 .env
+
 docker compose -f docker-compose.prod.yml ps
 
 # The previous commit's images are what a rollback pulls from cache, so keep them and

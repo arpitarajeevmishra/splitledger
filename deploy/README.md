@@ -228,6 +228,12 @@ Images are tagged by commit SHA and the host holds no state, so a rollback is a 
 image rather than a rebuild. This is why `deploy.sh` prunes only unreferenced images and never runs
 `prune -a`.
 
+A successful deploy writes that SHA into `TAG` in the host's `.env`. Two things follow: the file is
+always an accurate record of what is running, and any later `docker compose up` on the host brings
+back *that* image rather than whatever `:latest` has since become. A deploy that fails to come up
+healthy writes nothing, so the previous working SHA stays put — which is the one a restart should
+return to.
+
 **Logs:**
 
 ```bash
@@ -235,7 +241,8 @@ ssh ubuntu@<public-ip> 'cd /opt/splitledger && docker compose -f docker-compose.
 ```
 
 **Flip a kill switch** — edit `/opt/splitledger/.env` and restart the API. These toggle with a
-restart, not a deploy (SL-906):
+restart, not a deploy (SL-906), and the restart reuses the deployed image because `TAG` in that
+same file pins it:
 
 ```bash
 ssh ubuntu@<public-ip> 'cd /opt/splitledger && docker compose -f docker-compose.prod.yml up -d api'
