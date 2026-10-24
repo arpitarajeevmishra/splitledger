@@ -82,9 +82,6 @@ class RazorpayWebhookIT {
     private LedgerService ledger;
 
     @Autowired
-    private com.splitledger.settlement.application.SettlementExpirySweeper sweeper;
-
-    @Autowired
     private com.splitledger.settlement.application.SettlementService settlementService;
 
     @DynamicPropertySource
@@ -269,60 +266,6 @@ class RazorpayWebhookIT {
                 .andExpect(jsonPath("$.status").value("processed"));
 
         assertThat(netFor(settle)).as("the retry settled it").isZero();
-    }
-
-    @Test
-    void aCaptureThatArrivesAfterTheDeadlineStillConfirms() throws Exception {
-        // The late-webhook case (SL-604). The sweeper expires an abandoned checkout, then
-        // the capture turns up anyway -- which means the money really did move, and
-        // refusing it would leave a settled debt looking unpaid. EXPIRED is not terminal
-        // for exactly this reason.
-        Settle settle = aDebtOf(45_000L);
-        String orderId = order(settle);
-
-        sweeper.sweep();
-        assertThat(statusOf(settle)).isEqualTo("EXPIRED");
-
-        String body = capturedBody(orderId, "pay_late");
-        deliver(body, "evt_late_" + UUID.randomUUID())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("processed"));
-
-        assertThat(statusOf(settle)).isEqualTo("CONFIRMED");
-        assertThat(netFor(settle)).as("the late payment settled the debt").isZero();
-    }
-
-    @Test
-    void aCaptureForADebtAlreadySettledElsewhereIsStillRecorded() throws Exception {
-        // The case that found the bug. Bob starts a card payment, then hands over cash and
-        // Alice confirms it -- so by the time the gateway captures, Bob owes nothing.
-        //
-        // Before SL-604 this answered 422 on every delivery: the money had left Bob, the
-        // application refused to record it, and Razorpay would have retried forever. Now it
-        // posts, and Bob is in credit -- a reverse debt the group owes him, which ADR-010
-        // already calls legal and visible rather than an error.
-        Settle settle = aDebtOf(45_000L);
-        String orderId = order(settle);
-
-        com.splitledger.settlement.domain.Settlement cash = settlementService.create(
-                settle.groupId(), settle.payerId(), settle.payeeId(), 45_000L,
-                com.splitledger.common.payment.PaymentMethod.CASH);
-        settlementService.markPaid(cash.id(), settle.payerId());
-        settlementService.confirm(cash.id(), settle.payeeId());
-        assertThat(netFor(settle)).as("the debt is gone before the capture arrives").isZero();
-
-        String body = capturedBody(orderId, "pay_after_cash");
-        deliver(body, "evt_after_cash_" + UUID.randomUUID())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("processed"));
-
-        assertThat(statusOf(settle)).isEqualTo("CONFIRMED");
-        // In credit, not refused: the money really moved, so the ledger says so.
-        assertThat(netFor(settle)).isEqualTo(45_000L);
-
-        // And a retry does not double it, because a CONFIRMED settlement returns early.
-        deliver(body, "evt_after_cash_retry_" + UUID.randomUUID()).andExpect(status().isOk());
-        assertThat(netFor(settle)).isEqualTo(45_000L);
     }
 
     private ResultActions deliver(String body, String eventId) throws Exception {

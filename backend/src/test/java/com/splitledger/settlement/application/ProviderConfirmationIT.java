@@ -1,4 +1,4 @@
-package com.splitledger.settlement;
+package com.splitledger.settlement.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,9 +15,14 @@ import com.splitledger.expense.domain.SplitType;
 import com.splitledger.group.application.GroupMembershipService;
 import com.splitledger.group.domain.Role;
 import com.splitledger.ledger.application.LedgerService;
-import com.splitledger.settlement.application.SettlementService;
 import com.splitledger.settlement.domain.Settlement;
+import com.splitledger.settlement.domain.SettlementStatus;
+import com.splitledger.settlement.infra.SettlementRepository;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -42,6 +47,12 @@ import org.springframework.test.web.servlet.MockMvc;
  *       subject to the ordinary net-balance check. A demo visibly in credit for money that
  *       never existed is worse than a refused sandbox confirmation.</li>
  * </ul>
+ *
+ * <p>It lives in this package so it can build a {@link SettlementExpirySweeper} with a
+ * clock that has actually passed. The deadlines come from {@code PaymentMethod} and are
+ * fifteen minutes for a checkout, so the autowired sweeper on the real clock correctly
+ * expires nothing a test has just created -- which is how the first version of the
+ * late-capture case below failed in CI, asserting EXPIRED on a row that was still PENDING.
  *
  * <p>Sandbox auto-confirm is off here: with it on, its own scheduler would confirm the
  * settlement this test is about before the test got to it.
@@ -89,6 +100,9 @@ class ProviderConfirmationIT {
     @Autowired
     private LedgerService ledger;
 
+    @Autowired
+    private SettlementRepository settlementRows;
+
     private record Account(String token, UUID id) {
     }
 
@@ -127,6 +141,31 @@ class ProviderConfirmationIT {
                         .isEqualTo(ErrorCode.SETTLEMENT_EXCEEDS_OUTSTANDING));
 
         assertThat(netFor(f)).as("nothing moved, nothing posted").isZero();
+    }
+
+    @Test
+    void aCaptureThatArrivesAfterTheDeadlineStillConfirms() throws Exception {
+        // The late-webhook criterion. The checkout is abandoned, the sweeper expires it,
+        // and the capture turns up anyway -- which means the money really moved. EXPIRED is
+        // not terminal for exactly this reason: refusing it would leave a settled debt
+        // looking unpaid.
+        Fixture f = aDebtOf(45_000L);
+        Settlement card = settlements.create(f.groupId(), f.payer(), f.payee(), 45_000L,
+                PaymentMethod.RAZORPAY);
+        settlements.createProviderOrder(card.id(), f.payer());
+
+        // A sweeper whose clock is past the deadline, rather than the autowired one on the
+        // real clock, which would find nothing due for another fifteen minutes.
+        new SettlementExpirySweeper(settlementRows,
+                Clock.fixed(Instant.now().plus(Duration.ofHours(1)), ZoneOffset.UTC)).sweep();
+        assertThat(settlementRows.findById(card.id()).orElseThrow().status())
+                .isEqualTo(SettlementStatus.EXPIRED);
+
+        settlements.confirmFromProvider(card.id(), "pay_late");
+
+        assertThat(settlementRows.findById(card.id()).orElseThrow().status())
+                .isEqualTo(SettlementStatus.CONFIRMED);
+        assertThat(netFor(f)).as("the late payment settled the debt").isZero();
     }
 
     /** Bob hands Alice cash for the whole debt, and she confirms it. */
