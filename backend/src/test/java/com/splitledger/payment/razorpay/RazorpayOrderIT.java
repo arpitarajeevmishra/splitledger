@@ -124,6 +124,17 @@ class RazorpayOrderIT {
     }
 
     @Test
+    void theConfigEndpointHandsTheBrowserThePublicKey() throws Exception {
+        // Checkout runs in the browser and needs the public half of the pair to open an
+        // order. The secret is not here and never will be (SL-605).
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/v1/config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.razorpayKeyId").value("rzp_test_wired"))
+                .andExpect(jsonPath("$.razorpayKeySecret").doesNotExist());
+    }
+
+    @Test
     void razorpayAnswersForRazorpayRatherThanTheSandbox() throws Exception {
         Settle settle = aDebtOf(45_000L);
 

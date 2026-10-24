@@ -66,6 +66,16 @@ export function useStartOrder(groupId: string) {
   return useSettlementAction<string>(groupId, (id) => settlements.startOrder(id))
 }
 
+/**
+ * Hand Checkout's answer to the server, which verifies the signature before believing it.
+ */
+export function useGatewayCallback(groupId: string) {
+  return useSettlementAction<{
+    settlementId: string
+    callback: { orderId: string; paymentId: string; signature: string }
+  }>(groupId, ({ settlementId, callback }) => settlements.gatewayCallback(settlementId, callback))
+}
+
 export function useMarkPaid(groupId: string) {
   return useSettlementAction<string>(groupId, (id) => settlements.markPaid(id))
 }

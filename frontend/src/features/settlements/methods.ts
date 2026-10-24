@@ -46,9 +46,13 @@ export const PAYMENT_METHODS: MethodInfo[] = [
   {
     method: 'RAZORPAY',
     label: 'Card',
-    blurb: 'Razorpay test mode.',
+    blurb: "Razorpay's test mode. Their published test cards are shown when you pay.",
     movesRealMoney: false,
-    unavailable: 'Arrives in a later sprint.',
+    // Availability comes from the server, not from here: without a key pair the provider
+    // is not even created and an order would fail with a 502 (SL-605). The dialog filters
+    // this method out when the config reports no key, for the same reason it hides UPI --
+    // offering a payment the backend cannot take is worse than not offering it.
+    unavailable: null,
   },
 ]
 

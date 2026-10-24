@@ -18,6 +18,21 @@ export function settlementsApi(client: AxiosInstance = api) {
         .then((r) => r.data),
 
     /** Starts a provider order. Only gateway methods have one. */
+    /**
+     * What the payer's browser was handed when a gateway checkout finished (SL-602).
+     *
+     * Provider-neutral field names: Razorpay calls these razorpay_order_id,
+     * razorpay_payment_id and razorpay_signature, and the mapping happens at the call
+     * site so the rest of the client never learns the gateway's vocabulary.
+     */
+    gatewayCallback: (
+      settlementId: string,
+      callback: { orderId: string; paymentId: string; signature: string },
+    ) =>
+      client
+        .post<Settlement>(`/settlements/${settlementId}/gateway-callback`, callback)
+        .then((r) => r.data),
+
     startOrder: (settlementId: string) =>
       client.post<Settlement>(`/settlements/${settlementId}/gateway-order`).then((r) => r.data),
 

@@ -63,7 +63,11 @@ class DemoPostureIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.registrationEnabled").value(false))
                 .andExpect(jsonPath("$.upiIntentEnabled").value(false))
-                .andExpect(jsonPath("$.demoMode").value(true));
+                .andExpect(jsonPath("$.demoMode").value(true))
+                // No keys here, so no card payment is offered. The UI reads this one
+                // field: a key plus a separate "enabled" flag could disagree, and the
+                // disagreement would offer a payment the server cannot take (SL-605).
+                .andExpect(jsonPath("$.razorpayKeyId").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
