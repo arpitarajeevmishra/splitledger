@@ -36,6 +36,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 /**
  * The webhook, raced (SL-603, finding B6).
@@ -79,6 +80,12 @@ class RazorpayWebhookIT {
 
     @Autowired
     private LedgerService ledger;
+
+    @Autowired
+    private com.splitledger.settlement.application.SettlementExpirySweeper sweeper;
+
+    @Autowired
+    private com.splitledger.settlement.application.SettlementService settlementService;
 
     @DynamicPropertySource
     static void pointTheProviderAtTheStub(DynamicPropertyRegistry registry) {
@@ -224,6 +231,117 @@ class RazorpayWebhookIT {
         assertThat(netFor(settle)).isEqualTo(-45_000L);
     }
 
+    @Test
+    void aFailedAttemptIsRecordedAndLeavesTheSettlementAlone() throws Exception {
+        // Razorpay allows several payment attempts against one order, so a failure is not
+        // the end of a settlement: the payer can try another card on the same checkout.
+        // Marking it FAILED here would close a debt somebody is still paying (SL-604).
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+        String body = capturedBody(orderId, "pay_failed")
+                .replace("payment.captured", "payment.failed")
+                .replace("\"status\":\"captured\"", "\"status\":\"failed\"");
+
+        mockMvc.perform(post("/webhooks/razorpay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Razorpay-Signature", sign(body, WEBHOOK_SECRET))
+                        .header("X-Razorpay-Event-Id", "evt_failed_" + UUID.randomUUID())
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("attempt_recorded"));
+
+        assertThat(netFor(settle)).as("no money moved").isEqualTo(-45_000L);
+    }
+
+    @Test
+    void aFailedAttemptDoesNotStopTheNextOneSucceeding() throws Exception {
+        // The point of recording rather than acting: the same order is still payable.
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+
+        String failed = capturedBody(orderId, "pay_first_try")
+                .replace("payment.captured", "payment.failed");
+        deliver(failed, "evt_fail_" + UUID.randomUUID()).andExpect(status().isOk());
+
+        String captured = capturedBody(orderId, "pay_second_try");
+        deliver(captured, "evt_ok_" + UUID.randomUUID())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("processed"));
+
+        assertThat(netFor(settle)).as("the retry settled it").isZero();
+    }
+
+    @Test
+    void aCaptureThatArrivesAfterTheDeadlineStillConfirms() throws Exception {
+        // The late-webhook case (SL-604). The sweeper expires an abandoned checkout, then
+        // the capture turns up anyway -- which means the money really did move, and
+        // refusing it would leave a settled debt looking unpaid. EXPIRED is not terminal
+        // for exactly this reason.
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+
+        sweeper.sweep();
+        assertThat(statusOf(settle)).isEqualTo("EXPIRED");
+
+        String body = capturedBody(orderId, "pay_late");
+        deliver(body, "evt_late_" + UUID.randomUUID())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("processed"));
+
+        assertThat(statusOf(settle)).isEqualTo("CONFIRMED");
+        assertThat(netFor(settle)).as("the late payment settled the debt").isZero();
+    }
+
+    @Test
+    void aCaptureForADebtAlreadySettledElsewhereIsStillRecorded() throws Exception {
+        // The case that found the bug. Bob starts a card payment, then hands over cash and
+        // Alice confirms it -- so by the time the gateway captures, Bob owes nothing.
+        //
+        // Before SL-604 this answered 422 on every delivery: the money had left Bob, the
+        // application refused to record it, and Razorpay would have retried forever. Now it
+        // posts, and Bob is in credit -- a reverse debt the group owes him, which ADR-010
+        // already calls legal and visible rather than an error.
+        Settle settle = aDebtOf(45_000L);
+        String orderId = order(settle);
+
+        com.splitledger.settlement.domain.Settlement cash = settlementService.create(
+                settle.groupId(), settle.payerId(), settle.payeeId(), 45_000L,
+                com.splitledger.common.payment.PaymentMethod.CASH);
+        settlementService.markPaid(cash.id(), settle.payerId());
+        settlementService.confirm(cash.id(), settle.payeeId());
+        assertThat(netFor(settle)).as("the debt is gone before the capture arrives").isZero();
+
+        String body = capturedBody(orderId, "pay_after_cash");
+        deliver(body, "evt_after_cash_" + UUID.randomUUID())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("processed"));
+
+        assertThat(statusOf(settle)).isEqualTo("CONFIRMED");
+        // In credit, not refused: the money really moved, so the ledger says so.
+        assertThat(netFor(settle)).isEqualTo(45_000L);
+
+        // And a retry does not double it, because a CONFIRMED settlement returns early.
+        deliver(body, "evt_after_cash_retry_" + UUID.randomUUID()).andExpect(status().isOk());
+        assertThat(netFor(settle)).isEqualTo(45_000L);
+    }
+
+    private ResultActions deliver(String body, String eventId) throws Exception {
+        return mockMvc.perform(post("/webhooks/razorpay")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Razorpay-Signature", sign(body, WEBHOOK_SECRET))
+                .header("X-Razorpay-Event-Id", eventId)
+                .content(body));
+    }
+
+    private String statusOf(Settle settle) throws Exception {
+        return JsonPath.read(mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get("/api/v1/settlements/" + settle.settlementId())
+                                .header("Authorization", "Bearer " + settle.payerToken()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.status");
+    }
+
     private static String capturedBody(String orderId, String paymentId) {
         return "{\"entity\":\"event\",\"event\":\"payment.captured\",\"contains\":[\"payment\"],"
                 + "\"payload\":{\"payment\":{\"entity\":{\"id\":\"" + paymentId
@@ -266,7 +384,8 @@ class RazorpayWebhookIT {
     private record Account(String token, UUID id) {
     }
 
-    private record Settle(UUID settlementId, String payerToken, UUID groupId, UUID payerId) {
+    private record Settle(UUID settlementId, String payerToken, UUID groupId, UUID payerId,
+            UUID payeeId) {
     }
 
     /**
@@ -295,7 +414,7 @@ class RazorpayWebhookIT {
                 .andReturn().getResponse().getContentAsString();
 
         return new Settle(UUID.fromString(JsonPath.read(created, "$.id")), bob.token(),
-                groupId, bob.id());
+                groupId, bob.id(), alice.id());
     }
 
     private Account newUser(String label) throws Exception {

@@ -84,7 +84,18 @@ public class GatewayWebhookService {
         DUPLICATE,
 
         /** Verified, and nothing here to act on -- an event type or entity we do not use. */
-        IGNORED
+        IGNORED,
+
+        /**
+         * Verified, and it says a payment was tried and failed.
+         *
+         * <p>Written down and nothing else. Razorpay allows several payment attempts
+         * against one order, so a failure is not the end of a settlement -- the payer can
+         * try another card on the same checkout. Marking the settlement FAILED here would
+         * close a debt the payer is still in the middle of paying, and the only thing that
+         * should close it unpaid is its own deadline (SL-604).
+         */
+        ATTEMPT_RECORDED
     }
 
     /**
@@ -110,11 +121,20 @@ public class GatewayWebhookService {
             return Outcome.DUPLICATE;
         }
 
+        if (event.isPaymentFailed()) {
+            // An attempt, recorded and acted upon in no other way. The row carries the
+            // event type and the payload, so "why did this not settle" has an answer; the
+            // settlement itself is left exactly where it was, because the payer may still
+            // pay this order with another card.
+            log.info("A {} payment attempt failed for order {}", method, event.orderId());
+            events.finish(method.name(), event.eventId(), "PROCESSED", now);
+            return Outcome.ATTEMPT_RECORDED;
+        }
+
         if (!event.isPaymentCaptured() || event.orderId() == null) {
             // Authorised-but-not-captured, refunds, settlements of their own -- verified
-            // and none of this application's business yet. Recorded, so the next person to
-            // ask "did anything arrive" has an answer. payment.failed becomes an attempt
-            // in SL-604.
+            // and none of this application's business. Recorded, so the next person to ask
+            // "did anything arrive" has an answer.
             events.finish(method.name(), event.eventId(), "IGNORED", now);
             return Outcome.IGNORED;
         }

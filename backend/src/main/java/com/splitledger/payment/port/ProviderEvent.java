@@ -20,7 +20,14 @@ public record ProviderEvent(String eventId, String type, String orderId, String 
     /** Razorpay's name for a payment that has been taken, not merely authorised. */
     public static final String PAYMENT_CAPTURED = "payment.captured";
 
+    /** A payment that was tried and did not succeed. */
+    public static final String PAYMENT_FAILED = "payment.failed";
+
     public boolean isPaymentCaptured() {
         return PAYMENT_CAPTURED.equals(type);
+    }
+
+    public boolean isPaymentFailed() {
+        return PAYMENT_FAILED.equals(type);
     }
 }

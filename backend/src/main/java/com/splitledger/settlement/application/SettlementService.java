@@ -241,8 +241,27 @@ public class SettlementService {
      *
      * <p>Deliberately skips the payee check that {@link #confirm} enforces: for a gateway
      * method the provider is the authority on whether money moved, and the receiver has no
-     * say. There is no HTTP route to this -- callers are the sandbox's own scheduler and,
-     * in S7, a webhook handler that has already verified a signature.
+     * say. There is no HTTP route to this -- callers are the sandbox's own scheduler, the
+     * client callback, and the webhook handler, all of which have verified a signature.
+     *
+     * <p>It also skips the net-balance re-check, which is a narrowing of ADR-010 and the
+     * one judgement call in SL-604. ADR-010 re-checks at confirm time so that two
+     * settlements, each valid when started, cannot both complete and overpay the debt.
+     * That reasoning is sound where "completing" means a human asserting the money arrived
+     * -- refusing the second one costs nobody anything, and {@link #confirm} still does it.
+     *
+     * <p>A gateway capture is not an assertion. The money has already left the payer. The
+     * question is no longer "may this be authorised" but "what shall we do with money that
+     * has arrived", and refusing it does not send it back: it loses the payment, leaves the
+     * settlement PENDING, and answers the provider with a 4xx it will retry forever.
+     * Observed, rather than reasoned about -- a debt settled in cash, then captured by the
+     * gateway anyway, produced a 422 on every delivery and no record of the money at all.
+     *
+     * <p>So it posts, and the payer ends up in credit: a reverse debt the group owes them.
+     * ADR-010 already calls that "a legal, visible reverse debt, not an error" for the
+     * overpayment that voiding an expense creates. This is the same thing arriving by a
+     * different route, and the alternative is an application that quietly keeps money it
+     * cannot account for.
      */
     @Transactional
     public Settlement confirmFromProvider(UUID settlementId, String providerPaymentId) {
@@ -253,8 +272,6 @@ public class SettlementService {
         if (settlement.status() == SettlementStatus.CONFIRMED) {
             return settlement;
         }
-        requireWithinOutstanding(settlement.groupId(), settlement.fromUser(),
-                settlement.toUser(), settlement.amountPaise());
 
         settlement.recordGatewayPayment(providerPaymentId);
         settlement.confirm(Instant.now(clock));
