@@ -26,8 +26,12 @@ step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '  \033[33mnote\033[0m  %s\n' "$*"; }
 
 if [[ "$(id -u)" -ne 0 ]]; then
+  # Resolved to an absolute path first: invoked as `bash provision-oracle.sh`, $0 has no
+  # slash in it, so sudo looks it up in PATH and fails with "command not found". Passed
+  # to bash explicitly so the file does not need its executable bit to survive the copy.
+  self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
   say "Re-running under sudo."
-  exec sudo -E "$0" "$@"
+  exec sudo -E bash "$self" "$@"
 fi
 
 step "Checking the machine"
