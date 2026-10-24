@@ -47,6 +47,20 @@ tcp() {
 
 say "Checking $ENV_FILE"
 say
+# Spring imports this file as a .properties file (application.yml, spring.config.import),
+# and a properties file has no quoting: VALUE="true" binds the five characters "true",
+# which fails to convert to a boolean and takes the application down at startup. Exported
+# shell variables hide it, because the shell does strip the quotes -- so this only bites
+# whoever next relies on the file alone, which is the documented way to use it.
+say "Quoting"
+quoted=$(grep -nE '^[A-Z_][A-Z0-9_]*=["'"'"']' "$ENV_FILE" | cut -d: -f1 | tr '\n' ' ' || true)
+if [[ -n "$quoted" ]]; then
+  bad "quoted values on line(s) ${quoted% }: Spring reads this file as .properties, where the quotes are part of the value"
+else
+  ok "no quoted values"
+fi
+
+say
 say "Required variables"
 for v in DB_URL DB_USER DB_PASSWORD JWT_SECRET; do
   # Any angle bracket means an unfilled placeholder: the Neon host template in

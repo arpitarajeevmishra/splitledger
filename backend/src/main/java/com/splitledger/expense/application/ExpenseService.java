@@ -2,6 +2,7 @@ package com.splitledger.expense.application;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.limits.AccountLimits;
 import com.splitledger.common.money.SplitLimits;
 import com.splitledger.expense.domain.Expense;
 import com.splitledger.expense.domain.ExpenseSplit;
@@ -52,25 +53,27 @@ public class ExpenseService {
     private final GroupAccessGuard guard;
     private final GroupLock groupLock;
     private final LedgerService ledger;
+    private final AccountLimits limits;
     private final Clock clock;
 
     @Autowired
     ExpenseService(ExpenseRepository expenses, ExpenseSplitRepository splits,
             GroupMemberRepository members, GroupAccessGuard guard, GroupLock groupLock,
-            LedgerService ledger) {
-        this(expenses, splits, members, guard, groupLock, ledger, Clock.systemUTC());
+            LedgerService ledger, AccountLimits limits) {
+        this(expenses, splits, members, guard, groupLock, ledger, limits, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     ExpenseService(ExpenseRepository expenses, ExpenseSplitRepository splits,
             GroupMemberRepository members, GroupAccessGuard guard, GroupLock groupLock,
-            LedgerService ledger, Clock clock) {
+            LedgerService ledger, AccountLimits limits, Clock clock) {
         this.expenses = expenses;
         this.splits = splits;
         this.members = members;
         this.guard = guard;
         this.groupLock = groupLock;
         this.ledger = ledger;
+        this.limits = limits;
         this.clock = clock;
     }
 
@@ -94,6 +97,7 @@ public class ExpenseService {
         // Lock first, then read membership: taking the lock after validating would leave a
         // window in which someone leaves the group between the check and the write.
         ExpenseGroup group = groupLock.acquire(groupId);
+        requireDailyRoom(actorId);
 
         // No currency check here on purpose. ExpenseGroup.create refuses anything but INR
         // and the expenses table has CHECK (currency = 'INR'), so a non-INR group cannot
@@ -170,6 +174,10 @@ public class ExpenseService {
         requireCurrent(superseded, expectedVersion);
         requireActive(superseded);
 
+        // A replacement is a new row, so it counts against the day's allowance like any
+        // other. Exempting corrections would make replace-in-a-loop an uncapped write path,
+        // and the cap is about rows written, not expenses that stand.
+        requireDailyRoom(actorId);
         Map<UUID, Long> inputs = inputsOf(participants);
         requireActiveMembers(groupId, paidBy, inputs.keySet());
         SequencedMap<UUID, Long> owed = allocate(splitType, amountPaise, inputs);
@@ -232,6 +240,12 @@ public class ExpenseService {
      * <p>The group id is immutable, so reading it before the lock is safe in a way that
      * reading the version is not.
      */
+    /** Called inside the group lock, so a burst within one group cannot race past it. */
+    private void requireDailyRoom(UUID actorId) {
+        limits.requireRoomForExpense(expenses.countCreatedSince(actorId,
+                Instant.now(clock).minus(AccountLimits.EXPENSE_WINDOW)));
+    }
+
     private UUID groupOf(UUID expenseId) {
         return expenses.findGroupIdById(expenseId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such expense"));

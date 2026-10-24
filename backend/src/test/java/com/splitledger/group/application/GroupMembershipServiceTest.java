@@ -3,12 +3,14 @@ package com.splitledger.group.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.common.limits.AccountLimits;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.domain.Role;
 import com.splitledger.group.infra.GroupMemberRepository;
@@ -21,6 +23,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -38,6 +41,8 @@ class GroupMembershipServiceTest {
     private GroupAccessGuard guard;
     @Mock
     private GroupBalanceProbe balances;
+    @Mock
+    private GroupLock groupLock;
 
     private GroupMembershipService service;
     private UUID groupId;
@@ -50,8 +55,10 @@ class GroupMembershipServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GroupMembershipService(members, guard, balances,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+        // A real AccountLimits, not a mock: the caps are the thing under test in two of
+        // these cases, and a stubbed guard would assert that the stub was called.
+        service = new GroupMembershipService(members, guard, balances, groupLock,
+                new AccountLimits(20, 50, 200), Clock.fixed(NOW, ZoneOffset.UTC));
         groupId = UUID.randomUUID();
         adminId = UUID.randomUUID();
         memberId = UUID.randomUUID();
@@ -195,5 +202,63 @@ class GroupMembershipServiceTest {
         assertThatThrownBy(() -> service.remove(groupId, adminId, memberId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(codeOf(ex)).isEqualTo(ErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    void aJoinThatWouldOverfillTheGroupIsRefused() {
+        when(members.findByIdGroupIdAndIdUserId(groupId, memberId)).thenReturn(Optional.empty());
+        when(members.countByIdGroupIdAndLeftAtIsNull(groupId)).thenReturn(50L);
+
+        assertThatThrownBy(() -> service.joinOrRejoin(groupId, memberId, Role.MEMBER))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex ->
+                        assertThat(codeOf(ex)).isEqualTo(ErrorCode.ACCOUNT_LIMIT_REACHED));
+
+        verify(members, never()).save(any(GroupMember.class));
+    }
+
+    @Test
+    void aReJoinIsCappedToo() {
+        // Otherwise leaving and re-joining is a way around a full group: the departed row
+        // already exists, so the insert path never runs.
+        GroupMember departed = member();
+        departed.leave(NOW);
+        when(members.findByIdGroupIdAndIdUserId(groupId, memberId))
+                .thenReturn(Optional.of(departed));
+        when(members.countByIdGroupIdAndLeftAtIsNull(groupId)).thenReturn(50L);
+
+        assertThatThrownBy(() -> service.joinOrRejoin(groupId, memberId, Role.MEMBER))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex ->
+                        assertThat(codeOf(ex)).isEqualTo(ErrorCode.ACCOUNT_LIMIT_REACHED));
+    }
+
+    @Test
+    void theGroupIsLockedBeforeItsMembersAreCounted() {
+        // The count is only trustworthy under the lock. Without it two invitations accepted
+        // at the same instant both read a group with one place left, and both take it.
+        when(members.findByIdGroupIdAndIdUserId(groupId, memberId)).thenReturn(Optional.empty());
+        when(members.countByIdGroupIdAndLeftAtIsNull(groupId)).thenReturn(1L);
+
+        service.joinOrRejoin(groupId, memberId, Role.MEMBER);
+
+        InOrder order = inOrder(groupLock, members);
+        order.verify(groupLock).acquire(groupId);
+        order.verify(members).countByIdGroupIdAndLeftAtIsNull(groupId);
+        order.verify(members).save(any(GroupMember.class));
+    }
+
+    @Test
+    void joiningAGroupYouAreAlreadyInNeitherLocksNorCounts() {
+        // Already-in is a no-op, so it must not consume a place -- and must not serialise
+        // behind the group lock either, for a call that changes nothing.
+        when(members.findByIdGroupIdAndIdUserId(groupId, memberId))
+                .thenReturn(Optional.of(member()));
+        when(members.countByIdGroupIdAndLeftAtIsNull(groupId)).thenReturn(50L);
+
+        service.joinOrRejoin(groupId, memberId, Role.MEMBER);
+
+        verify(groupLock, never()).acquire(any());
+        verify(members, never()).save(any(GroupMember.class));
     }
 }

@@ -1,6 +1,7 @@
 package com.splitledger.expense.infra;
 
 import com.splitledger.expense.domain.Expense;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -11,6 +12,17 @@ import org.springframework.data.repository.query.Param;
 public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
 
     List<Expense> findAllByGroupIdOrderByExpenseDateDescCreatedAtDesc(UUID groupId);
+
+    /**
+     * Expenses this account created since {@code since}, voided ones included.
+     *
+     * <p>Counting rows rather than live expenses is deliberate: the cap exists to bound
+     * how much work and storage one account can cause, and a voided expense cost exactly
+     * as much to write as one that stands. Excluding them would make void-and-record an
+     * unlimited write loop.
+     */
+    @Query("select count(e) from Expense e where e.createdBy = :userId and e.createdAt >= :since")
+    long countCreatedSince(@Param("userId") UUID userId, @Param("since") Instant since);
 
     /**
      * Just the group, so a caller can take the group lock before loading the expense

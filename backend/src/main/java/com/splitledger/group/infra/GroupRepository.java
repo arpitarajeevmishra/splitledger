@@ -12,6 +12,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface GroupRepository extends JpaRepository<ExpenseGroup, UUID> {
 
+    /**
+     * Groups this account created, however many it has since left. Leaving one must not
+     * hand back an allowance to create another, or the cap bounds nothing.
+     */
+    long countByCreatedBy(UUID createdBy);
+
     /** Only groups the caller is still an active member of. */
     @Query("select g from ExpenseGroup g where g.id in ("
             + "select m.id.groupId from GroupMember m "

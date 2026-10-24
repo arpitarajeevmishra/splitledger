@@ -141,7 +141,20 @@ app:
         capacity: 30
         per: PT1M
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
+  # Read at startup, so flipping it needs the container restarted -- not a release, not a
+  # rebuild, and recoverable in seconds if a demo turns into an incident.
   registration-enabled: ${REGISTRATION_ENABLED:false}
+  limits:
+    # Per-account caps (SL-906, risk R13). Not authorisation -- these bound what one
+    # account can cost in storage, writes and bill before anyone notices. Every number is
+    # far above any honest use of a demo and far below anything that hurts.
+    groups-per-account: ${LIMIT_GROUPS_PER_ACCOUNT:20}
+    # Matched to SplitLimits.MAX_PARTICIPANTS on purpose: an expense can be split between
+    # at most 50 people, so a 51st member is someone who could never be in a whole-group
+    # split. Divergence here would be a group whose own expenses cannot include everyone.
+    members-per-group: ${LIMIT_MEMBERS_PER_GROUP:50}
+    # Rolling 24 hours, counting voided rows too (AccountLimits).
+    expenses-per-day: ${LIMIT_EXPENSES_PER_DAY:200}
   payments:
     # The only method that can reach a real bank account. Off wherever data is
     # fictional, which is everywhere in this product (ADR-013).
