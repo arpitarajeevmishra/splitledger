@@ -25,5 +25,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# 127.0.0.1, not localhost: the config above says `listen 80`, which binds IPv4 only,
+# while /etc/hosts maps localhost to ::1 as well -- and busybox wget tries ::1 first and
+# gets a connection refused. The backend's healthcheck can say localhost because the JVM
+# binds dual-stack; nginx here does not, so the check names the address it actually
+# serves. Without this the container never reports healthy, and compose's
+# `depends_on: service_healthy` then stops Caddy from starting at all.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost/ >/dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
