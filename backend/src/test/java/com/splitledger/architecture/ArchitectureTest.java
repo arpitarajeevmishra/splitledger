@@ -62,12 +62,35 @@ class ArchitectureTest {
                     .resideInAnyPackage("..expense..", "..settlement..")
                     .because("the ledger only posts balanced transactions; it must not know why");
 
+    /**
+     * Kept, and currently vacuous: SL-601 implements the Orders call with {@code RestClient}
+     * rather than Razorpay's SDK, so no class named {@code com.razorpay.*} exists to depend
+     * on. It stays because the day someone adds the SDK is the day it starts mattering, and
+     * a rule that passes for the right reason tomorrow is cheaper than remembering to write
+     * it then.
+     */
     @ArchTest
     static final ArchRule only_payment_may_talk_to_razorpay =
             ArchRuleDefinition.noClasses()
                     .that().resideOutsideOfPackage("..payment..")
                     .should().dependOnClassesThat().resideInAPackage("com.razorpay..")
                     .because("the gateway lives behind the PaymentProvider port (ADR-006)");
+
+    /**
+     * The rule that actually bites today. Without an SDK to point at, "the gateway stays
+     * behind the port" means our own gateway classes: the provider, its properties, and
+     * whatever S7 adds for signatures and webhooks.
+     *
+     * <p>Anchored at {@code com.splitledger.payment..} rather than {@code ..payment..} for
+     * the reason recorded above the {@code common} rule.
+     */
+    @ArchTest
+    static final ArchRule nothing_outside_payment_knows_the_gateways_name =
+            ArchRuleDefinition.noClasses()
+                    .that().resideOutsideOfPackage("com.splitledger.payment..")
+                    .should().dependOnClassesThat().haveSimpleNameStartingWith("Razorpay")
+                    .because("settlement asks the PaymentProvider port and never learns "
+                            + "which provider answered (ADR-006)");
 
     /**
      * Spring cannot choose between two constructors unless one is marked, and the failure
