@@ -5,6 +5,7 @@ import com.splitledger.common.errors.ErrorCode;
 import com.splitledger.common.idempotency.IdempotencyService;
 import com.splitledger.common.web.AuthenticatedUser;
 import com.splitledger.settlement.api.dto.CreateSettlementRequest;
+import com.splitledger.settlement.api.dto.GatewayCallbackRequest;
 import com.splitledger.settlement.api.dto.SettlementResponse;
 import com.splitledger.settlement.application.SettlementService;
 import jakarta.validation.Valid;
@@ -84,6 +85,26 @@ public class SettlementController {
             @PathVariable UUID settlementId) {
         return SettlementResponse.of(settlements.createProviderOrder(settlementId,
                 AuthenticatedUser.require(authentication)));
+    }
+
+    /**
+     * The payer's browser reports that the gateway checkout finished.
+     *
+     * <p>Not a webhook. This is the payer's own request carrying what the gateway's page
+     * handed them, so it proves nothing by itself -- the signature over it does, and
+     * SL-603's webhook remains the authority that does not depend on a browser coming back
+     * at all.
+     *
+     * <p>Idempotent: a reloaded result page gets the confirmed settlement rather than a
+     * second posting to the ledger.
+     */
+    @PostMapping("/settlements/{settlementId}/gateway-callback")
+    public SettlementResponse gatewayCallback(Authentication authentication,
+            @PathVariable UUID settlementId,
+            @Valid @RequestBody GatewayCallbackRequest request) {
+        return SettlementResponse.of(settlements.confirmFromCallback(settlementId,
+                AuthenticatedUser.require(authentication), request.orderId(),
+                request.paymentId(), request.signature()));
     }
 
     /**
