@@ -15,6 +15,10 @@ const { preview, accept, decline } = vi.hoisted(() => ({
 }))
 vi.mock('../../api/groups', () => ({
   invitesApi: () => ({ preview, accept, decline }),
+  // Accepting invalidates the groups list, so InvitePage now imports useGroups -- which
+  // calls groupsApi() at module scope for the same reason invitesApi() is called here.
+  // Stubbed so that import resolves; this page never issues a request through it.
+  groupsApi: () => ({}),
 }))
 
 function notFound() {
