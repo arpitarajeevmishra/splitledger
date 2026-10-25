@@ -70,14 +70,49 @@ public class GroupService {
     @Transactional(readOnly = true)
     public List<GroupSummaryResponse> listMine(UUID userId) {
         return groups.findAllForMember(userId).stream()
-                .map(group -> {
-                    GroupMember me = guard.requireMember(group.id(), userId);
-                    return new GroupSummaryResponse(group.id(), group.name(), group.currency(),
-                            me.role(),
-                            (int) members.countByIdGroupIdAndLeftAtIsNull(group.id()),
-                            group.createdAt());
-                })
+                .map(group -> summaryOf(group, guard.requireMember(group.id(), userId).role()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<GroupSummaryResponse> listArchived(UUID userId) {
+        return groups.findAllArchivedForMember(userId).stream()
+                .map(group -> summaryOf(group, guard.requireMember(group.id(), userId).role()))
+                .toList();
+    }
+
+    /**
+     * Put a group away.
+     *
+     * <p>Admin only, and reversible. What it is not is a delete: the ledger is immutable
+     * (ADR-003) and a group's rows are the evidence behind every balance its members have
+     * ever seen, so removing them would either orphan postings or erase the record someone
+     * settled money against. Archiving hides it and stops new entries; the history stays
+     * exactly where it was.
+     *
+     * <p>Archiving a group that still owes money is allowed on purpose. People abandon
+     * shared flats without squaring up, and refusing to tidy the list until a debt nobody
+     * intends to pay is settled would make the button useless precisely when it is wanted.
+     * The balances remain visible inside the archived group.
+     */
+    @Transactional
+    public GroupDetailResponse archive(UUID groupId, UUID actorId) {
+        guard.requireAdmin(groupId, actorId);
+        ExpenseGroup group = groups.findById(groupId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such group"));
+        group.archive(Instant.now(clock));
+        groups.save(group);
+        return detailOf(group, guard.requireMember(groupId, actorId).role());
+    }
+
+    @Transactional
+    public GroupDetailResponse unarchive(UUID groupId, UUID actorId) {
+        guard.requireAdmin(groupId, actorId);
+        ExpenseGroup group = groups.findById(groupId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such group"));
+        group.unarchive();
+        groups.save(group);
+        return detailOf(group, guard.requireMember(groupId, actorId).role());
     }
 
     @Transactional(readOnly = true)
@@ -88,6 +123,12 @@ public class GroupService {
         ExpenseGroup group = groups.findById(groupId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such group"));
         return detailOf(group, me.role());
+    }
+
+    private GroupSummaryResponse summaryOf(ExpenseGroup group, Role yourRole) {
+        return new GroupSummaryResponse(group.id(), group.name(), group.currency(), yourRole,
+                (int) members.countByIdGroupIdAndLeftAtIsNull(group.id()), group.createdAt(),
+                group.isArchived());
     }
 
     private GroupDetailResponse detailOf(ExpenseGroup group, Role yourRole) {
@@ -110,6 +151,6 @@ public class GroupService {
                 .toList();
 
         return new GroupDetailResponse(group.id(), group.name(), group.currency(), yourRole,
-                group.createdAt(), memberViews);
+                group.createdAt(), memberViews, group.archivedAt());
     }
 }

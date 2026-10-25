@@ -30,6 +30,7 @@ const GROUP: GroupDetail = {
     { userId: SOMEONE.id, name: 'Alice Ray', role: 'MEMBER', joinedAt: '2026-01-01T10:00:00Z' },
     { userId: BOB, name: 'Bob Stone', role: 'ADMIN', joinedAt: '2026-01-02T10:00:00Z' },
   ],
+  archivedAt: null,
 }
 
 const BALANCES: Balances = {

@@ -138,4 +138,109 @@ class GroupFlowIT {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
+
+    @Test
+    void archivingPutsAGroupAwayWithoutDestroyingIt() throws Exception {
+        String alice = newUser("Alice");
+        String groupId = JsonPath.read(mockMvc.perform(post("/api/v1/groups")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Old flat\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/archive")
+                        .header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").isNotEmpty());
+
+        // Gone from the list someone opens every day...
+        mockMvc.perform(get("/api/v1/groups").header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + groupId + "')]").isEmpty());
+
+        // ...but not gone. The history is the evidence behind balances people have
+        // already acted on, which is the whole reason this archives rather than deletes.
+        mockMvc.perform(get("/api/v1/groups/archived").header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(groupId))
+                .andExpect(jsonPath("$[0].archived").value(true));
+        mockMvc.perform(get("/api/v1/groups/" + groupId)
+                        .header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Old flat"));
+    }
+
+    @Test
+    void anArchivedGroupTakesNoNewEntries() throws Exception {
+        String alice = newUser("Alice");
+        String aliceId = JsonPath.read(mockMvc.perform(get("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + alice))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        String groupId = JsonPath.read(mockMvc.perform(post("/api/v1/groups")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Old flat\"}"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/archive")
+                        .header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk());
+
+        // Hiding it is not enough: a client still holding the id could otherwise keep
+        // adding to something its members believe is put away.
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/expenses")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"Dinner\",\"amountPaise\":9000,\"paidBy\":\""
+                                + aliceId + "\",\"expenseDate\":\"2026-01-10\","
+                                + "\"splitType\":\"EQUAL\",\"participants\":[{\"userId\":\""
+                                + aliceId + "\"}]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("GROUP_ARCHIVED"));
+
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/invites")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"someone@example.com\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("GROUP_ARCHIVED"));
+    }
+
+    @Test
+    void unarchivingPutsItBackInTheList() throws Exception {
+        String alice = newUser("Alice");
+        String groupId = JsonPath.read(mockMvc.perform(post("/api/v1/groups")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Old flat\"}"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/archive")
+                .header("Authorization", "Bearer " + alice)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/unarchive")
+                        .header("Authorization", "Bearer " + alice))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archivedAt").doesNotExist());
+
+        // Undoable, or it is deletion with extra steps.
+        mockMvc.perform(get("/api/v1/groups").header("Authorization", "Bearer " + alice))
+                .andExpect(jsonPath("$[?(@.id == '" + groupId + "')]").isNotEmpty());
+    }
+
+    @Test
+    void onlyAnAdminMayArchive() throws Exception {
+        String alice = newUser("Alice");
+        String bob = newUser("Bob");
+        String groupId = JsonPath.read(mockMvc.perform(post("/api/v1/groups")
+                        .header("Authorization", "Bearer " + alice)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Flat 402\"}"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+
+        // A stranger gets 404, not 403: the rule that stops id enumeration applies to
+        // this endpoint as much as to any other.
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/archive")
+                        .header("Authorization", "Bearer " + bob))
+                .andExpect(status().isNotFound());
+    }
 }

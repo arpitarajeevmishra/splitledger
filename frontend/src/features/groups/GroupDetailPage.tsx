@@ -6,6 +6,7 @@ import { DemoBanner } from '../../components/DemoBanner'
 import { formatDate } from '../../lib/format'
 import { BalancesPanel } from '../expenses/BalancesPanel'
 import { ExpenseList } from '../expenses/ExpenseList'
+import { ArchiveGroup } from './ArchiveGroup'
 import { InvitesPanel } from './InvitesPanel'
 import { SettlementsPanel } from '../settlements/SettlementsPanel'
 import { MembersPanel } from './MembersPanel'
@@ -52,6 +53,20 @@ export function GroupDetailPage() {
               <h1 className="mt-2 text-[28px] leading-[34px] font-semibold text-ink">
                 {group.name}
               </h1>
+              {group.archivedAt !== null && (
+                // Said at the top, not discovered by pressing something and being
+                // refused: an archived group still shows every number it ever had, so
+                // nothing else on the page hints that it is closed.
+                <p className="mt-3 rounded border border-line bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                  Archived on {formatDate(group.archivedAt)}. It is read-only — restore it to add
+                  expenses, payments or members.
+                </p>
+              )}
+              {group.yourRole === 'ADMIN' && (
+                <div className="mt-4">
+                  <ArchiveGroup group={group} />
+                </div>
+              )}
             </section>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-2">

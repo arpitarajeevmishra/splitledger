@@ -24,6 +24,7 @@ const GROUP: GroupDetail = {
     { userId: BOB, name: 'Bob Stone', role: 'MEMBER', joinedAt: '2026-01-02T10:00:00Z' },
     { userId: CAROL, name: 'Carol Vance', role: 'MEMBER', joinedAt: '2026-01-03T10:00:00Z' },
   ],
+  archivedAt: null,
 }
 
 function renderForm() {

@@ -11,5 +11,7 @@ public record GroupDetailResponse(
         String currency,
         Role yourRole,
         Instant createdAt,
-        List<GroupMemberResponse> members) {
+        List<GroupMemberResponse> members,
+        /** Null while in use. Set means the group is read-only and hidden from the list. */
+        Instant archivedAt) {
 }

@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom'
 import { messageFor } from '../../api/problem'
 import { Button } from '../../components/ui/Button'
 import { CreateGroupDialog } from './CreateGroupDialog'
-import { useGroups } from './useGroups'
+import { useArchivedGroups, useGroups } from './useGroups'
 
 export function GroupsPanel() {
   const { data: groups, isPending, isError, error } = useGroups()
+  const [showingArchived, setShowingArchived] = useState(false)
+  // Fetched only when asked for: most visits never open the archive.
+  const { data: archived } = useArchivedGroups(showingArchived)
   const [creating, setCreating] = useState(false)
 
   return (
@@ -18,9 +21,7 @@ export function GroupsPanel() {
         <Button onClick={() => setCreating(true)}>New group</Button>
       </div>
 
-      {isPending && (
-        <p className="px-4 py-8 text-center text-sm text-ink-dim">Loading groups…</p>
-      )}
+      {isPending && <p className="px-4 py-8 text-center text-sm text-ink-dim">Loading groups…</p>}
 
       {isError && (
         <p role="alert" className="px-4 py-8 text-center text-sm text-negative">
@@ -62,6 +63,40 @@ export function GroupsPanel() {
           ))}
         </ul>
       )}
+
+      <div className="border-t border-line px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setShowingArchived((showing) => !showing)}
+          className="font-mono text-[11px] tracking-[0.04em] text-ink-dim uppercase hover:text-ink"
+        >
+          {showingArchived ? 'Hide archived' : 'Show archived'}
+        </button>
+
+        {showingArchived && (
+          <ul className="mt-2">
+            {archived === undefined && <li className="text-sm text-ink-dim">Loading…</li>}
+            {archived !== undefined && archived.length === 0 && (
+              <li className="text-sm text-ink-dim">Nothing archived.</li>
+            )}
+            {archived?.map((group) => (
+              <li key={group.id}>
+                {/* Still a link: an archived group keeps every number it ever had, and
+                    going in is how you restore it. */}
+                <Link
+                  to={`/groups/${group.id}`}
+                  className="flex items-center justify-between gap-3 py-2 hover:text-ink"
+                >
+                  <span className="min-w-0 truncate text-sm text-ink-muted">{group.name}</span>
+                  <span className="font-mono text-[11px] tracking-[0.04em] text-ink-dim uppercase">
+                    archived
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <CreateGroupDialog open={creating} onClose={() => setCreating(false)} />
     </section>

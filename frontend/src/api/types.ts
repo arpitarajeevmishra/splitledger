@@ -20,6 +20,8 @@ export type GroupSummary = {
   yourRole: Role
   memberCount: number
   createdAt: string
+  /** True when the group has been put away. Sent on every list, so it is never inferred. */
+  archived: boolean
 }
 
 /**
@@ -40,6 +42,8 @@ export type GroupDetail = {
   yourRole: Role
   createdAt: string
   members: GroupMember[]
+  /** Null while in use. Set means read-only and hidden from the groups list. */
+  archivedAt: string | null
 }
 
 export type InviteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'REVOKED'
