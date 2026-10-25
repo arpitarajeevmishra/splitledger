@@ -11,6 +11,7 @@ import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.infra.GroupMemberRepository;
 import com.splitledger.settlement.domain.Settlement;
 import com.splitledger.ledger.application.LedgerService;
+import com.splitledger.outbox.application.OutboxRecorder;
 import com.splitledger.payment.port.PaymentProvider;
 import com.splitledger.payment.port.PaymentRequest;
 import com.splitledger.payment.port.ProviderCallback;
@@ -48,20 +49,22 @@ public class SettlementService {
     private final BalanceService balances;
     private final LedgerService ledger;
     private final List<PaymentProvider> providers;
+    private final OutboxRecorder outbox;
     private final Clock clock;
 
     @Autowired
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
             GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
-            LedgerService ledger, List<PaymentProvider> providers) {
-        this(settlements, members, guard, groupLock, balances, ledger, providers,
+            LedgerService ledger, List<PaymentProvider> providers, OutboxRecorder outbox) {
+        this(settlements, members, guard, groupLock, balances, ledger, providers, outbox,
                 Clock.systemUTC());
     }
 
     /** Visible for testing. */
     SettlementService(SettlementRepository settlements, GroupMemberRepository members,
             GroupAccessGuard guard, GroupLock groupLock, BalanceService balances,
-            LedgerService ledger, List<PaymentProvider> providers, Clock clock) {
+            LedgerService ledger, List<PaymentProvider> providers, OutboxRecorder outbox,
+            Clock clock) {
         this.settlements = settlements;
         this.members = members;
         this.guard = guard;
@@ -69,6 +72,7 @@ public class SettlementService {
         this.balances = balances;
         this.ledger = ledger;
         this.providers = providers;
+        this.outbox = outbox;
         this.clock = clock;
     }
 
@@ -135,9 +139,7 @@ public class SettlementService {
 
         // The payer laid out money, so the group owes them that much more; the receiver
         // has been made whole by the same amount (LLD 5.1).
-        ledger.post(settlement.groupId(), TransactionType.SETTLEMENT, settlement.id(), List.of(
-                LedgerService.Line.of(settlement.fromUser(), settlement.amountPaise()),
-                LedgerService.Line.of(settlement.toUser(), -settlement.amountPaise())));
+        postAndAnnounce(settlement);
         return settlement;
     }
 
@@ -286,10 +288,34 @@ public class SettlementService {
         settlement.confirm(Instant.now(clock));
         settlements.save(settlement);
 
+        postAndAnnounce(settlement);
+        return settlement;
+    }
+
+    /**
+     * Move the money, and say that it moved.
+     *
+     * <p>Both confirmation paths end here -- a payee saying cash arrived, and a gateway
+     * saying a payment captured -- so the posting and the announcement cannot drift apart.
+     * The two {@code ledger.post} calls were already identical; what makes sharing them
+     * matter now is the event, because an emitter wired to one site and not the other is a
+     * notification that fires for roughly half the settlements in the product and looks
+     * like a flaky consumer rather than a missing line.
+     *
+     * <p>In the caller's transaction, like every outbox write (ADR-005): the posting and
+     * the event commit together or neither does.
+     */
+    private void postAndAnnounce(Settlement settlement) {
+        // The payer laid out money, so the group owes them that much more; the receiver
+        // has been made whole by the same amount (LLD 5.1).
         ledger.post(settlement.groupId(), TransactionType.SETTLEMENT, settlement.id(), List.of(
                 LedgerService.Line.of(settlement.fromUser(), settlement.amountPaise()),
                 LedgerService.Line.of(settlement.toUser(), -settlement.amountPaise())));
-        return settlement;
+        outbox.record(SettlementEvents.AGGREGATE, settlement.id(), settlement.groupId(),
+                SettlementEvents.CONFIRMED,
+                new SettlementEvents.Confirmed(settlement.id(), settlement.groupId(),
+                        settlement.fromUser(), settlement.toUser(), settlement.amountPaise(),
+                        settlement.method().name()));
     }
 
     private PaymentProvider providerFor(PaymentMethod method) {

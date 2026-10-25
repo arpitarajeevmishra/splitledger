@@ -16,6 +16,7 @@ import com.splitledger.group.domain.ExpenseGroup;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.infra.GroupMemberRepository;
 import com.splitledger.ledger.application.LedgerService;
+import com.splitledger.outbox.application.OutboxRecorder;
 import com.splitledger.ledger.domain.TransactionType;
 import java.time.Clock;
 import java.time.Instant;
@@ -54,19 +55,22 @@ public class ExpenseService {
     private final GroupLock groupLock;
     private final LedgerService ledger;
     private final AccountLimits limits;
+    private final OutboxRecorder outbox;
     private final Clock clock;
 
     @Autowired
     ExpenseService(ExpenseRepository expenses, ExpenseSplitRepository splits,
             GroupMemberRepository members, GroupAccessGuard guard, GroupLock groupLock,
-            LedgerService ledger, AccountLimits limits) {
-        this(expenses, splits, members, guard, groupLock, ledger, limits, Clock.systemUTC());
+            LedgerService ledger, AccountLimits limits, OutboxRecorder outbox) {
+        this(expenses, splits, members, guard, groupLock, ledger, limits, outbox,
+                Clock.systemUTC());
     }
 
     /** Visible for testing. */
     ExpenseService(ExpenseRepository expenses, ExpenseSplitRepository splits,
             GroupMemberRepository members, GroupAccessGuard guard, GroupLock groupLock,
-            LedgerService ledger, AccountLimits limits, Clock clock) {
+            LedgerService ledger, AccountLimits limits, OutboxRecorder outbox,
+            Clock clock) {
         this.expenses = expenses;
         this.splits = splits;
         this.members = members;
@@ -74,6 +78,7 @@ public class ExpenseService {
         this.groupLock = groupLock;
         this.ledger = ledger;
         this.limits = limits;
+        this.outbox = outbox;
         this.clock = clock;
     }
 
@@ -115,7 +120,14 @@ public class ExpenseService {
         Expense expense = expenses.save(Expense.record(groupId, paidBy, description, amountPaise,
                 group.currency(), splitType, expenseDate, actorId, now));
 
-        return new Recorded(expense, writeSplitsAndPostings(expense, owed, inputs));
+        List<ExpenseSplit> written = writeSplitsAndPostings(expense, owed, inputs);
+        // Inside this transaction, so the event and the expense commit together or not at
+        // all (ADR-005). After the postings, so an event is never written for a split that
+        // failed to balance.
+        outbox.record(ExpenseEvents.AGGREGATE, expense.id(), groupId, ExpenseEvents.CREATED,
+                new ExpenseEvents.Created(expense.id(), groupId, actorId, paidBy, description,
+                        amountPaise, List.copyOf(owed.keySet())));
+        return new Recorded(expense, written);
     }
 
     /**
@@ -149,6 +161,9 @@ public class ExpenseService {
         // The ledger refuses a second reversal of the same transaction too, so a race
         // that slipped past requireActive still cannot double-count.
         ledger.reverseSource(TransactionType.EXPENSE, expense.id());
+        outbox.record(ExpenseEvents.AGGREGATE, expense.id(), groupId, ExpenseEvents.VOIDED,
+                new ExpenseEvents.Voided(expense.id(), groupId, actorId, expense.description(),
+                        expense.amountPaise(), participantsOf(expense.id())));
         return expense;
     }
 
@@ -188,9 +203,31 @@ public class ExpenseService {
         expenses.save(superseded);
         ledger.reverseSource(TransactionType.EXPENSE, superseded.id());
 
+        // Announced as a void of the old one before the new one is recorded, so a consumer
+        // sees the same two facts in the same order a reader of the history would.
+        outbox.record(ExpenseEvents.AGGREGATE, superseded.id(), groupId, ExpenseEvents.VOIDED,
+                new ExpenseEvents.Voided(superseded.id(), groupId, actorId,
+                        superseded.description(), superseded.amountPaise(),
+                        participantsOf(superseded.id())));
+
         Expense replacement = expenses.save(Expense.replacing(superseded, paidBy, description,
                 amountPaise, splitType, expenseDate, actorId, now));
-        return new Recorded(replacement, writeSplitsAndPostings(replacement, owed, inputs));
+        List<ExpenseSplit> written = writeSplitsAndPostings(replacement, owed, inputs);
+        outbox.record(ExpenseEvents.AGGREGATE, replacement.id(), groupId, ExpenseEvents.CREATED,
+                new ExpenseEvents.Created(replacement.id(), groupId, actorId, paidBy, description,
+                        amountPaise, List.copyOf(owed.keySet())));
+        return new Recorded(replacement, written);
+    }
+
+    /**
+     * Who owed a share of an expense.
+     *
+     * <p>Read from the splits rather than passed down, because a void knows only the
+     * expense: the people to tell are the people who owed, and by the time anything handles
+     * that event those splits belong to an expense that no longer stands.
+     */
+    private List<UUID> participantsOf(UUID expenseId) {
+        return splits.findAllByIdExpenseId(expenseId).stream().map(ExpenseSplit::userId).toList();
     }
 
     @Transactional(readOnly = true)

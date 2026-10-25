@@ -102,6 +102,25 @@ app:
     # own claim immediately.
     claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
     purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
+  outbox:
+    # How long an event may sit unpublished. One second, because the whole latency budget
+    # of the outbox is this number (ADR-005) -- an event is written on commit and does
+    # nothing until the next poll picks it up, so this is what "eventually" means here.
+    poll-delay-ms: ${OUTBOX_POLL_DELAY_MS:1000}
+    # Claimed and locked together, so the batch is also how much work one poll holds a
+    # lock over. Large enough that a burst drains in a few polls, small enough that a
+    # second publisher has rows left to take.
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    kafka:
+      # Off, and off in production (ADR-015): the deployed runtime publishes in-process
+      # and operates no broker. The adapter behind this flag is exercised by CI against an
+      # embedded broker, which is what keeps the alternative honest rather than aspirational.
+      enabled: ${OUTBOX_KAFKA_ENABLED:false}
+      topic: ${OUTBOX_KAFKA_TOPIC:splitledger.events}
+      # A bounded wait on the broker's acknowledgement. Unbounded would turn a broker that
+      # stopped answering into a scheduler thread that never comes back.
+      send-timeout-ms: ${OUTBOX_KAFKA_SEND_TIMEOUT_MS:5000}
+
   settlements:
     # Every minute (LLD 7.1). The deadlines themselves live on the payment method, which
     # is where the reason for them lives.
