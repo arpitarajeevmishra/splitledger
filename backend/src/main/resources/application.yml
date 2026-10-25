@@ -111,6 +111,11 @@ app:
     # lock over. Large enough that a burst drains in a few polls, small enough that a
     # second publisher has rows left to take.
     batch-size: ${OUTBOX_BATCH_SIZE:100}
+    # Failures before the publisher gives up and dead-letters the event (V7). Three,
+    # because the failures worth retrying -- a broker restarting, a deadlock, a deploy
+    # mid-flight -- are over within seconds, and anything still failing on the third
+    # attempt is a bug rather than a blip.
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:3}
     kafka:
       # Off, and off in production (ADR-015): the deployed runtime publishes in-process
       # and operates no broker. The adapter behind this flag is exercised by CI against an

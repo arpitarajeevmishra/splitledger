@@ -34,6 +34,7 @@ class OutboxPublisherTest {
 
     private static final Instant NOW = Instant.parse("2026-10-25T12:00:00Z");
     private static final UUID GROUP = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+    private static final int MAX_ATTEMPTS = 3;
 
     @Mock
     private OutboxEventRepository events;
@@ -42,7 +43,8 @@ class OutboxPublisherTest {
     private EventPublisher bus;
 
     private OutboxPublisher publisher() {
-        return new OutboxPublisher(events, bus, 100, Clock.fixed(NOW, ZoneOffset.UTC));
+        return new OutboxPublisher(events, bus, 100, MAX_ATTEMPTS,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static OutboxEvent event(String type) {
@@ -81,6 +83,27 @@ class OutboxPublisherTest {
         // that is silent, permanent loss, and the next poll is what makes it merely a
         // delay instead.
         assertThat(doomed.publishedAt()).isNull();
+        // Counted, but not given up on. Most failures worth retrying are over in seconds,
+        // and dead-lettering on the first one would turn a broker restart into lost work.
+        assertThat(doomed.attempts()).isEqualTo(1);
+        assertThat(doomed.deadLetteredAt()).isNull();
+    }
+
+    @Test
+    void gives_up_on_an_event_after_the_configured_number_of_failures() {
+        OutboxEvent doomed = event("expense.created");
+        when(events.claimUnpublished(100)).thenReturn(List.of(doomed));
+        doThrow(new IllegalStateException("will never work")).when(bus).publish(any());
+
+        for (int poll = 0; poll < MAX_ATTEMPTS; poll++) {
+            publisher().publishBatch();
+        }
+
+        // Dead-lettered rather than deleted: the row keeps its payload, because the
+        // question asked later is "what was this, and why did nobody get it".
+        assertThat(doomed.attempts()).isEqualTo(MAX_ATTEMPTS);
+        assertThat(doomed.deadLetteredAt()).isEqualTo(NOW);
+        assertThat(doomed.publishedAt()).isNull();
     }
 
     @Test
@@ -104,8 +127,8 @@ class OutboxPublisherTest {
     void claims_no_more_than_the_configured_batch_size() {
         when(events.claimUnpublished(7)).thenReturn(List.of(event("expense.created")));
 
-        assertThat(new OutboxPublisher(events, bus, 7, Clock.fixed(NOW, ZoneOffset.UTC))
-                .publishBatch()).isEqualTo(1);
+        assertThat(new OutboxPublisher(events, bus, 7, MAX_ATTEMPTS,
+                Clock.fixed(NOW, ZoneOffset.UTC)).publishBatch()).isEqualTo(1);
 
         // The batch is also how many rows one poll holds a lock over, so a hardcoded size
         // here would silently override the knob that exists to bound that.

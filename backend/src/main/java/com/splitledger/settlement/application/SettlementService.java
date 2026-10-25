@@ -137,9 +137,9 @@ public class SettlementService {
         settlement.confirm(Instant.now(clock));
         settlements.save(settlement);
 
-        // The payer laid out money, so the group owes them that much more; the receiver
-        // has been made whole by the same amount (LLD 5.1).
-        postAndAnnounce(settlement);
+        // The payee is the one who just said it arrived, so they are the one person who
+        // does not need telling.
+        postAndAnnounce(settlement, actorId);
         return settlement;
     }
 
@@ -288,7 +288,9 @@ public class SettlementService {
         settlement.confirm(Instant.now(clock));
         settlements.save(settlement);
 
-        postAndAnnounce(settlement);
+        // Null: a gateway confirmed this, so there is no person to leave out and both
+        // parties are hearing it for the first time.
+        postAndAnnounce(settlement, null);
         return settlement;
     }
 
@@ -305,7 +307,7 @@ public class SettlementService {
      * <p>In the caller's transaction, like every outbox write (ADR-005): the posting and
      * the event commit together or neither does.
      */
-    private void postAndAnnounce(Settlement settlement) {
+    private void postAndAnnounce(Settlement settlement, UUID confirmedBy) {
         // The payer laid out money, so the group owes them that much more; the receiver
         // has been made whole by the same amount (LLD 5.1).
         ledger.post(settlement.groupId(), TransactionType.SETTLEMENT, settlement.id(), List.of(
@@ -315,7 +317,7 @@ public class SettlementService {
                 SettlementEvents.CONFIRMED,
                 new SettlementEvents.Confirmed(settlement.id(), settlement.groupId(),
                         settlement.fromUser(), settlement.toUser(), settlement.amountPaise(),
-                        settlement.method().name()));
+                        settlement.method().name(), confirmedBy));
     }
 
     private PaymentProvider providerFor(PaymentMethod method) {

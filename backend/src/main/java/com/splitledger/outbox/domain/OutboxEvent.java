@@ -53,6 +53,13 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    /** Failures, not attempts: published first time means zero (V7). */
+    @Column(name = "attempts", nullable = false)
+    private int attempts;
+
+    @Column(name = "dead_lettered_at")
+    private Instant deadLetteredAt;
+
     protected OutboxEvent() {
         // Hibernate.
     }
@@ -95,5 +102,32 @@ public class OutboxEvent {
 
     public void markPublished(Instant at) {
         this.publishedAt = at;
+    }
+
+    /**
+     * Count a failure, and give up once there have been enough of them.
+     *
+     * <p>Dead-lettering is a stamp, not a delete: the row keeps its payload, because the
+     * question somebody asks later is "what was this, and why did nobody get it", and a
+     * deleted row answers neither. The publisher stops claiming it, so it costs nothing but
+     * the space it sits in.
+     *
+     * @return whether this failure was the one that gave up
+     */
+    public boolean failedAttempt(Instant at, int maxAttempts) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+            deadLetteredAt = at;
+            return true;
+        }
+        return false;
+    }
+
+    public int attempts() {
+        return attempts;
+    }
+
+    public Instant deadLetteredAt() {
+        return deadLetteredAt;
     }
 }
