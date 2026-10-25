@@ -31,6 +31,7 @@ public enum ErrorCode {
     LAST_ADMIN(HttpStatus.UNPROCESSABLE_ENTITY, "A group must keep at least one admin"),
     AMOUNT_OUT_OF_RANGE(HttpStatus.UNPROCESSABLE_ENTITY, "Amount, shares or participant count outside the allowed range"),
     ACCOUNT_LIMIT_REACHED(HttpStatus.UNPROCESSABLE_ENTITY, "A cap on this demo account was reached"),
+    GROUP_ARCHIVED(HttpStatus.CONFLICT, "This group is archived"),
     ALREADY_GROUP_MEMBER(HttpStatus.CONFLICT, "They are already in this group"),
     INVITE_ALREADY_PENDING(HttpStatus.CONFLICT,
             "An invitation to that address was just created"),

@@ -22,6 +22,7 @@ function group(yourRole: Role): GroupDetail {
       { userId: SOMEONE.id, name: 'Alice Ray', role: yourRole, joinedAt: '2026-01-01T10:00:00Z' },
       { userId: 'user-2', name: 'Bob Stone', role: 'MEMBER', joinedAt: '2026-01-02T10:00:00Z' },
     ],
+    archivedAt: null,
   }
 }
 

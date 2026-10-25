@@ -45,6 +45,32 @@ public class GroupController {
         return groupService.listMine(AuthenticatedUser.require(authentication));
     }
 
+    /** The ones put away, so they can be found and brought back. */
+    @GetMapping("/archived")
+    public List<GroupSummaryResponse> listArchived(Authentication authentication) {
+        return groupService.listArchived(AuthenticatedUser.require(authentication));
+    }
+
+    /**
+     * Put a group away. Admin only, and reversible.
+     *
+     * <p>Not {@code DELETE}, because it does not delete: the ledger is immutable and a
+     * group's rows are the evidence behind balances its members have already acted on. A
+     * verb that says archive is honest about what the button does; a DELETE that quietly
+     * archives is not.
+     */
+    @PostMapping("/{groupId}/archive")
+    public GroupDetailResponse archive(Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupService.archive(groupId, AuthenticatedUser.require(authentication));
+    }
+
+    @PostMapping("/{groupId}/unarchive")
+    public GroupDetailResponse unarchive(Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupService.unarchive(groupId, AuthenticatedUser.require(authentication));
+    }
+
     @GetMapping("/{groupId}")
     public GroupDetailResponse detail(Authentication authentication,
             @PathVariable UUID groupId) {

@@ -35,6 +35,7 @@ const GROUP: GroupDetail = {
     { userId: SOMEONE.id, name: 'Alice Ray', role: 'ADMIN', joinedAt: '2026-01-01T10:00:00Z' },
     { userId: BOB, name: 'Bob Stone', role: 'MEMBER', joinedAt: '2026-01-02T10:00:00Z' },
   ],
+  archivedAt: null,
 }
 
 function renderDialog(suggestion?: { from: string; to: string; amountPaise: number }) {

@@ -6,6 +6,19 @@ export function groupsApi(client: AxiosInstance = api) {
   return {
     list: () => client.get<GroupSummary[]>('/groups').then((r) => r.data),
 
+    listArchived: () => client.get<GroupSummary[]>('/groups/archived').then((r) => r.data),
+
+    /**
+     * Put a group away. Deliberately not a DELETE: nothing is destroyed, because the
+     * ledger is immutable and a group's rows are the evidence behind balances its members
+     * have already acted on.
+     */
+    archive: (groupId: string) =>
+      client.post<GroupDetail>(`/groups/${groupId}/archive`).then((r) => r.data),
+
+    unarchive: (groupId: string) =>
+      client.post<GroupDetail>(`/groups/${groupId}/unarchive`).then((r) => r.data),
+
     create: (name: string) => client.post<GroupDetail>('/groups', { name }).then((r) => r.data),
 
     detail: (groupId: string) => client.get<GroupDetail>(`/groups/${groupId}`).then((r) => r.data),

@@ -5,11 +5,12 @@ import type { GroupSummary } from '../../api/types'
 import { renderWithProviders } from '../../test/renderWithProviders'
 import { GroupsPanel } from './GroupsPanel'
 
-const { useGroups, useCreateGroup } = vi.hoisted(() => ({
+const { useGroups, useCreateGroup, useArchivedGroups } = vi.hoisted(() => ({
+  useArchivedGroups: vi.fn(),
   useGroups: vi.fn(),
   useCreateGroup: vi.fn(),
 }))
-vi.mock('./useGroups', () => ({ useGroups, useCreateGroup }))
+vi.mock('./useGroups', () => ({ useGroups, useCreateGroup, useArchivedGroups }))
 
 const GROUPS: GroupSummary[] = [
   {
@@ -18,6 +19,7 @@ const GROUPS: GroupSummary[] = [
     currency: 'INR',
     yourRole: 'ADMIN',
     memberCount: 4,
+    archived: false,
     createdAt: '2026-01-01T10:00:00Z',
   },
   {
@@ -26,12 +28,14 @@ const GROUPS: GroupSummary[] = [
     currency: 'INR',
     yourRole: 'MEMBER',
     memberCount: 1,
+    archived: false,
     createdAt: '2026-02-01T10:00:00Z',
   },
 ]
 
 describe('GroupsPanel', () => {
   beforeEach(() => {
+    useArchivedGroups.mockReturnValue({ data: [] as GroupSummary[] })
     useCreateGroup.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })
   })
 
@@ -80,5 +84,29 @@ describe('GroupsPanel', () => {
 
     expect(await screen.findByRole('dialog')).toHaveTextContent('New group')
     expect(screen.getByLabelText('Group name')).toBeInTheDocument()
+  })
+
+  it('keeps archived groups out of the list until asked for', async () => {
+    // The point of archiving is that the list stops showing it. A toggle that fetched
+    // them anyway would make the archive a second place to be reminded of the group.
+    useArchivedGroups.mockReturnValue({
+      data: [{ ...GROUPS[0]!, id: 'g9', name: 'Old flat', archived: true }],
+    })
+    renderWithProviders(<GroupsPanel />)
+
+    expect(screen.queryByText('Old flat')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /show archived/i }))
+
+    expect(screen.getByText('Old flat')).toBeInTheDocument()
+  })
+
+  it('says so when there is nothing archived', async () => {
+    useArchivedGroups.mockReturnValue({ data: [] })
+    renderWithProviders(<GroupsPanel />)
+
+    await userEvent.click(screen.getByRole('button', { name: /show archived/i }))
+
+    expect(screen.getByText(/nothing archived/i)).toBeInTheDocument()
   })
 })

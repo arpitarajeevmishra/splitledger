@@ -94,6 +94,7 @@ public class ExpenseService {
             UUID paidBy, LocalDate expenseDate, SplitType splitType,
             List<Participant> participants) {
         guard.requireMember(groupId, actorId);
+        guard.requireActive(groupId);
         // Lock first, then read membership: taking the lock after validating would leave a
         // window in which someone leaves the group between the check and the write.
         ExpenseGroup group = groupLock.acquire(groupId);

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.group.domain.ExpenseGroup;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.domain.Role;
 import com.splitledger.group.infra.GroupMemberRepository;
@@ -26,9 +27,11 @@ class GroupAccessGuardTest {
 
     @Mock
     private GroupMemberRepository members;
+    @Mock
+    private com.splitledger.group.infra.GroupRepository groups;
 
     private GroupAccessGuard guard() {
-        return new GroupAccessGuard(members);
+        return new GroupAccessGuard(members, groups);
     }
 
     private static ErrorCode codeOf(Throwable ex) {
@@ -89,5 +92,38 @@ class GroupAccessGuardTest {
         assertThatThrownBy(() -> guard().requireAdmin(groupId, userId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> assertThat(codeOf(ex)).isEqualTo(ErrorCode.FORBIDDEN));
+    }
+
+    @Test
+    void refusesAWriteToAnArchivedGroup() {
+        // Archiving is meant to stop new entries, not merely hide the group: a client that
+        // still held the id could otherwise go on adding expenses to something its members
+        // believe is put away.
+        ExpenseGroup archived = ExpenseGroup.create("Flat 402", "INR", userId, NOW);
+        archived.archive(NOW);
+        when(groups.findById(groupId)).thenReturn(Optional.of(archived));
+
+        assertThatThrownBy(() -> guard().requireActive(groupId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(codeOf(ex)).isEqualTo(ErrorCode.GROUP_ARCHIVED));
+    }
+
+    @Test
+    void allowsAWriteToAGroupInUse() {
+        when(groups.findById(groupId))
+                .thenReturn(Optional.of(ExpenseGroup.create("Flat 402", "INR", userId, NOW)));
+
+        guard().requireActive(groupId);
+    }
+
+    @Test
+    void aMissingGroupIsStillA404RatherThanAnArchivedOne() {
+        // The 404-not-403 rule applies here too: someone guessing ids must not learn the
+        // difference between "archived" and "never existed".
+        when(groups.findById(groupId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> guard().requireActive(groupId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(codeOf(ex)).isEqualTo(ErrorCode.NOT_FOUND));
     }
 }

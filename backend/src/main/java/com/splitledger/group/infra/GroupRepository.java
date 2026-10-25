@@ -18,12 +18,25 @@ public interface GroupRepository extends JpaRepository<ExpenseGroup, UUID> {
      */
     long countByCreatedBy(UUID createdBy);
 
-    /** Only groups the caller is still an active member of. */
-    @Query("select g from ExpenseGroup g where g.id in ("
+    /**
+     * Only groups the caller is still an active member of, and that are still in use.
+     *
+     * <p>Archived ones are excluded here rather than filtered by the caller: a list
+     * endpoint that returns them and trusts every client to hide them is one forgotten
+     * filter away from showing people the thing they put away.
+     */
+    @Query("select g from ExpenseGroup g where g.archivedAt is null and g.id in ("
             + "select m.id.groupId from GroupMember m "
             + "where m.id.userId = :userId and m.leftAt is null) "
             + "order by g.createdAt desc")
     List<ExpenseGroup> findAllForMember(@Param("userId") UUID userId);
+
+    /** The ones that were put away, so they can be found again. */
+    @Query("select g from ExpenseGroup g where g.archivedAt is not null and g.id in ("
+            + "select m.id.groupId from GroupMember m "
+            + "where m.id.userId = :userId and m.leftAt is null) "
+            + "order by g.archivedAt desc")
+    List<ExpenseGroup> findAllArchivedForMember(@Param("userId") UUID userId);
 
     /**
      * SELECT ... FOR UPDATE on the group row (ADR-004).

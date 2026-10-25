@@ -2,8 +2,10 @@ package com.splitledger.group.application;
 
 import com.splitledger.common.errors.ApiException;
 import com.splitledger.common.errors.ErrorCode;
+import com.splitledger.group.domain.ExpenseGroup;
 import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.infra.GroupMemberRepository;
+import com.splitledger.group.infra.GroupRepository;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,9 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class GroupAccessGuard {
 
     private final GroupMemberRepository members;
+    private final GroupRepository groups;
 
-    GroupAccessGuard(GroupMemberRepository members) {
+    GroupAccessGuard(GroupMemberRepository members, GroupRepository groups) {
         this.members = members;
+        this.groups = groups;
     }
 
     @Transactional(readOnly = true)
@@ -34,6 +38,29 @@ public class GroupAccessGuard {
         return members.findByIdGroupIdAndIdUserId(groupId, userId)
                 .filter(GroupMember::isActive)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such group"));
+    }
+
+    /**
+     * Refuse a write to a group that has been put away.
+     *
+     * <p>Here with the other access rules rather than scattered across the services, for
+     * the reason ADR-004 gives about the group lock: a check repeated in five places is a
+     * check that will be missing from the sixth.
+     *
+     * <p>Deliberately <b>not</b> called from the paths that finish business already begun
+     * -- confirming, rejecting or cancelling a settlement, and provider confirmations
+     * above all. Money that has already moved has to be recorded whatever the group's
+     * state (D-119); archiving is about starting new things, not about freezing a payment
+     * somebody has already made.
+     */
+    @Transactional(readOnly = true)
+    public void requireActive(UUID groupId) {
+        ExpenseGroup group = groups.findById(groupId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "No such group"));
+        if (group.isArchived()) {
+            throw new ApiException(ErrorCode.GROUP_ARCHIVED,
+                    "This group is archived. Restore it to make changes.");
+        }
     }
 
     @Transactional(readOnly = true)

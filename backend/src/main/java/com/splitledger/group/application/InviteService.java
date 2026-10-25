@@ -84,6 +84,7 @@ public class InviteService {
     @Transactional
     public Issued invite(UUID groupId, UUID actorId, String rawEmail) {
         guard.requireAdmin(groupId, actorId);
+        guard.requireActive(groupId);
         String email = users.normaliseEmail(rawEmail);
 
         boolean alreadyIn = users.userIdFor(email)

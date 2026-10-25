@@ -43,6 +43,10 @@ public class ExpenseGroup {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Null while the group is in use. Set when it is put away, cleared when it comes back. */
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
     protected ExpenseGroup() {
         // for JPA
     }
@@ -90,5 +94,30 @@ public class ExpenseGroup {
 
     public void rename(String newName) {
         this.name = newName.trim();
+    }
+
+    public Instant archivedAt() {
+        return archivedAt;
+    }
+
+    public boolean isArchived() {
+        return archivedAt != null;
+    }
+
+    /**
+     * Put the group away.
+     *
+     * <p>Idempotent: archiving an archived group keeps the original timestamp rather than
+     * moving it, so "when was this put away" stays answerable after a double click.
+     */
+    public void archive(Instant now) {
+        if (archivedAt == null) {
+            this.archivedAt = now;
+        }
+    }
+
+    /** Bring it back. Archiving is meant to be undoable, or it is deletion with extra steps. */
+    public void unarchive() {
+        this.archivedAt = null;
     }
 }

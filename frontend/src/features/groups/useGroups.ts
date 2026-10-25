@@ -14,6 +14,7 @@ export const groupKeys = {
   list: () => [...groupKeys.all, 'list'] as const,
   detail: (groupId: string) => [...groupKeys.all, 'detail', groupId] as const,
   invites: (groupId: string) => [...groupKeys.all, 'invites', groupId] as const,
+  archived: () => [...groupKeys.all, 'archived'] as const,
 }
 
 export function useGroups() {
@@ -25,6 +26,42 @@ export function useGroup(groupId: string) {
     queryKey: groupKeys.detail(groupId),
     queryFn: () => api.detail(groupId),
   })
+}
+
+export function useArchivedGroups(enabled: boolean) {
+  return useQuery<GroupSummary[]>({
+    queryKey: groupKeys.archived(),
+    queryFn: api.listArchived,
+    // Only fetched when someone asks to see them: most visits never open the archive, and
+    // a list nobody looked at should not cost a request on every page load.
+    enabled,
+  })
+}
+
+/**
+ * Archiving and restoring both move a group between the two lists, so both have to
+ * invalidate both -- and the detail, whose read-only state has just changed.
+ */
+function useArchiveAction(action: (groupId: string) => Promise<GroupDetail>) {
+  const queryClient = useQueryClient()
+  return useMutation<GroupDetail, unknown, string>({
+    mutationFn: action,
+    onSuccess: async (group) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: groupKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: groupKeys.archived() }),
+        queryClient.invalidateQueries({ queryKey: groupKeys.detail(group.id) }),
+      ])
+    },
+  })
+}
+
+export function useArchiveGroup() {
+  return useArchiveAction(api.archive)
+}
+
+export function useUnarchiveGroup() {
+  return useArchiveAction(api.unarchive)
 }
 
 export function useCreateGroup() {

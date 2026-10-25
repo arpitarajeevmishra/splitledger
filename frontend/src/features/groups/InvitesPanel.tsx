@@ -39,9 +39,7 @@ export function InvitesPanel({ groupId, groupName }: { groupId: string; groupNam
         <Button onClick={() => setInviting(true)}>Invite someone</Button>
       </div>
 
-      {isPending && (
-        <p className="px-4 py-6 text-center text-sm text-ink-dim">Loading invites…</p>
-      )}
+      {isPending && <p className="px-4 py-6 text-center text-sm text-ink-dim">Loading invites…</p>}
 
       {isError && (
         <p role="alert" className="px-4 py-6 text-center text-sm text-negative">

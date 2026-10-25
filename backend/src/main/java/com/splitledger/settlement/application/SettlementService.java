@@ -83,6 +83,7 @@ public class SettlementService {
     public Settlement create(UUID groupId, UUID payerId, UUID payeeId, long amountPaise,
             PaymentMethod method) {
         guard.requireMember(groupId, payerId);
+        guard.requireActive(groupId);
         groupLock.acquire(groupId);
 
         requireActiveMembers(groupId, payerId, payeeId);
