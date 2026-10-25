@@ -1,5 +1,6 @@
 package com.splitledger.common.money;
 
+import java.io.Serializable;
 import java.util.Objects;
 
 /**
@@ -18,7 +19,7 @@ import java.util.Objects;
  * <p>Arithmetic uses the exact variants, so an overflow is an exception rather than a
  * silently wrapped balance.
  */
-public record Money(long paise) implements Comparable<Money> {
+public record Money(long paise) implements Comparable<Money>, Serializable {
 
     public static final Money ZERO = new Money(0L);
 

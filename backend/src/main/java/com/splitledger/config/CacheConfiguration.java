@@ -7,7 +7,9 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -28,13 +30,61 @@ import org.springframework.context.annotation.Configuration;
  * varies, and a {@code @Cacheable} that silently stops caching when a URL changes would
  * be exactly the hidden coupling the ADR is trying to avoid.
  *
- * <p>Nothing is annotated with {@code @Cacheable} yet. The caches are declared and bounded
- * here so that the balance caching in LLD section 13 is a one-annotation change rather
- * than a cache-infrastructure change.
+ * <p>A cache failure is a miss, never a request failure. That is what makes "the cache is
+ * optional" true at runtime rather than only at startup: with Redis configured, a broker
+ * that stops answering must cost latency and nothing else, and the default behaviour --
+ * letting the exception out of the {@code @Cacheable} method -- would turn a cache outage
+ * into an outage of every balance in the product.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableCaching
-public class CacheConfiguration {
+public class CacheConfiguration implements CachingConfigurer {
+
+    private static final Logger errors = LoggerFactory.getLogger(CacheConfiguration.class);
+
+    /**
+     * Every cache operation degrades to doing without.
+     *
+     * <p>A read that fails is a miss, so the method body runs and the database answers. A
+     * write that fails leaves the entry absent, which is the safe direction: the next read
+     * recomputes. <b>An eviction that fails is the one that matters</b> -- swallowing it
+     * leaves a stale balance in the cache -- and it is still swallowed, because failing the
+     * write transaction over it would roll back an expense that was correctly recorded, to
+     * protect a cache. It is logged at error level so that it is visible as what it is: a
+     * number that will be wrong until its five-minute TTL expires.
+     */
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new CacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException failure,
+                    org.springframework.cache.Cache cache, Object key) {
+                errors.warn("cache {}: read failed for {}, serving from the database",
+                        cache.getName(), key, failure);
+            }
+
+            @Override
+            public void handleCachePutError(RuntimeException failure,
+                    org.springframework.cache.Cache cache, Object key, Object value) {
+                errors.warn("cache {}: write failed for {}, leaving it uncached",
+                        cache.getName(), key, failure);
+            }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException failure,
+                    org.springframework.cache.Cache cache, Object key) {
+                errors.error("cache {}: EVICTION FAILED for {} -- that entry is now stale "
+                        + "until its TTL expires", cache.getName(), key, failure);
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException failure,
+                    org.springframework.cache.Cache cache) {
+                errors.error("cache {}: clear failed -- entries may be stale until their "
+                        + "TTL expires", cache.getName(), failure);
+            }
+        };
+    }
 
     /**
      * The in-process branch. When {@code REDIS_URL} carries a URL this class contributes

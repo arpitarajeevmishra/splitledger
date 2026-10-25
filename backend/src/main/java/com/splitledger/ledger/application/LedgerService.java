@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,18 +42,21 @@ public class LedgerService {
 
     private final LedgerTransactionRepository transactions;
     private final LedgerPostingRepository postings;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     @Autowired
-    LedgerService(LedgerTransactionRepository transactions, LedgerPostingRepository postings) {
-        this(transactions, postings, Clock.systemUTC());
+    LedgerService(LedgerTransactionRepository transactions, LedgerPostingRepository postings,
+            ApplicationEventPublisher events) {
+        this(transactions, postings, events, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     LedgerService(LedgerTransactionRepository transactions, LedgerPostingRepository postings,
-            Clock clock) {
+            ApplicationEventPublisher events, Clock clock) {
         this.transactions = transactions;
         this.postings = postings;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -163,6 +167,11 @@ public class LedgerService {
             // has nothing left to translate.
             transactions.flush();
             postings.flush();
+            // Announced here, in the one place both post() and reverse() pass through, so
+            // that no future way of writing to the ledger can forget to say that it did.
+            // After the flush, so an event is never raised for a write that the unique
+            // index is about to refuse.
+            events.publishEvent(new LedgerChanged(transaction.groupId()));
             return transaction;
         } catch (DataIntegrityViolationException ex) {
             // The index, not the pre-check, is what actually decides: two concurrent

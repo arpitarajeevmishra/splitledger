@@ -43,6 +43,8 @@ class LedgerServiceTest {
     private LedgerTransactionRepository transactions;
     @Mock
     private LedgerPostingRepository postings;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     private LedgerService service;
     private UUID groupId;
@@ -56,7 +58,8 @@ class LedgerServiceTest {
         alice = UUID.randomUUID();
         bob = UUID.randomUUID();
         carol = UUID.randomUUID();
-        service = new LedgerService(transactions, postings, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new LedgerService(transactions, postings, events,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         when(transactions.save(any())).thenAnswer(call -> call.getArgument(0));
         when(postings.save(any())).thenAnswer(call -> call.getArgument(0));
     }
@@ -228,5 +231,21 @@ class LedgerServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.INVALID_STATE_TRANSITION);
+    }
+
+    @Test
+    void announcesEveryWriteSoDerivedDataCanBeDropped() {
+        service.post(groupId, TransactionType.EXPENSE, UUID.randomUUID(), List.of(
+                LedgerService.Line.of(alice, 90_000L),
+                LedgerService.Line.of(bob, -90_000L)));
+
+        // Published from write(), the one method post() and reverse() both pass through,
+        // so a future way of writing to the ledger cannot forget to say that it did. The
+        // balance cache is evicted off the back of this and would otherwise serve a number
+        // that stopped being true at this exact moment.
+        org.mockito.ArgumentCaptor<Object> published =
+                org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(events).publishEvent(published.capture());
+        assertThat(published.getValue()).isEqualTo(new LedgerChanged(groupId));
     }
 }
