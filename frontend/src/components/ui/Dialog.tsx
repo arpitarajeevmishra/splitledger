@@ -5,9 +5,15 @@ import { useEffect, useRef, type ReactNode } from 'react'
  *
  * <p>Hand-rolled rather than using the native &lt;dialog&gt; element: jsdom's support for
  * showModal() is partial, so the component tests would be testing the polyfill gap rather
- * than the screen. The three things the native element gives for free are therefore done
- * here explicitly -- Escape closes, focus moves in on open and back out on close, and the
- * backdrop is inert to anything but dismissal.
+ * than the screen. What the native element gives for free is therefore done here
+ * explicitly -- Escape closes, focus moves in on open and back out on close, focus is
+ * kept inside while it is open, the page behind cannot scroll, and the backdrop is inert
+ * to anything but dismissal.
+ *
+ * <p>The focus trap and the scroll lock were missing, and the comment above used to claim
+ * the dialog was modal without either. Tabbing walked straight out of the panel into the
+ * page behind it and the body kept scrolling, so "modal" was true of the pixels and false
+ * of the keyboard.
  */
 export function Dialog({
   open,
@@ -39,22 +45,60 @@ export function Dialog({
       return
     }
     returnFocusTo.current = document.activeElement as HTMLElement | null
+
+    const FOCUSABLE =
+      'a[href], input:not([disabled]), button:not([disabled]), select:not([disabled]),' +
+      ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+    /** Everything tabbable inside the panel, in document order. */
+    function focusable(): HTMLElement[] {
+      return Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
+    }
+
     // The first focusable thing inside, or the panel itself, so a screen reader starts
     // reading the dialog rather than wherever the page happened to be.
-    const first = panelRef.current?.querySelector<HTMLElement>(
-      'input, button, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )
-    ;(first ?? panelRef.current)?.focus()
+    ;(focusable()[0] ?? panelRef.current)?.focus()
+
+    // The page behind must not scroll under the dialog. Restored to whatever it was
+    // rather than hard-coded back to "", so a page that sets its own overflow keeps it.
+    const bodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.stopPropagation()
         onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      // The trap. Without it Tab leaves the panel and walks the page behind, which is
+      // how a "modal" dialog stops being modal for anyone not using a mouse.
+      const items = focusable()
+      if (items.length === 0) {
+        event.preventDefault()
+        panelRef.current?.focus()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+
+      if (!event.shiftKey && (active === last || !panelRef.current?.contains(active))) {
+        event.preventDefault()
+        first?.focus()
+      } else if (event.shiftKey && (active === first || !panelRef.current?.contains(active))) {
+        event.preventDefault()
+        last?.focus()
       }
     }
+
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = bodyOverflow
       returnFocusTo.current?.focus()
     }
   }, [open])

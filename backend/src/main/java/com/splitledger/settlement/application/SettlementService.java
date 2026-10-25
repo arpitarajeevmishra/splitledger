@@ -372,19 +372,24 @@ public class SettlementService {
         long payerNet = net.getOrDefault(payerId, 0L);
         long payeeNet = net.getOrDefault(payeeId, 0L);
 
+        // Phrased about the debt rather than about "you". This check runs at creation,
+        // where the reader is the payer, and again at confirmation, where the reader is
+        // the payee -- and a payee told "you do not owe this group anything" after
+        // clicking Confirm is being answered a question they did not ask. That is exactly
+        // what the second settlement for an already-settled debt produced.
         if (payerNet >= 0L) {
             throw new ApiException(ErrorCode.SETTLEMENT_EXCEEDS_OUTSTANDING,
-                    "You do not owe this group anything");
+                    "That debt is already settled, so there is nothing left to pay");
         }
         if (payeeNet <= 0L) {
             throw new ApiException(ErrorCode.SETTLEMENT_EXCEEDS_OUTSTANDING,
-                    "They are not owed anything by this group");
+                    "That debt is already settled, so there is nothing left to receive");
         }
 
         long limit = Math.min(-payerNet, payeeNet);
         if (amountPaise > limit) {
             throw new ApiException(ErrorCode.SETTLEMENT_EXCEEDS_OUTSTANDING,
-                    "That is more than the " + Money.ofPaise(limit) + " outstanding between you");
+                    "Only " + Money.ofPaise(limit) + " is still outstanding on that debt");
         }
     }
 

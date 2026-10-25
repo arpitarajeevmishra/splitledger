@@ -22,16 +22,18 @@ const STATUS_STYLE: Record<SettlementStatus, string> = {
 }
 
 /**
- * D5: a confirmed payment says no funds moved, not "payment successful".
+ * The status of a payment, in the fewest words that are still true.
  *
- * <p>"Settled" is true of the ledger and says nothing about the bank. Someone reading it
- * on a screen that looks like a payment screen can reasonably conclude money left their
- * account, and the one thing this product must never do is let somebody believe that.
+ * <p>"simulated payment -- no funds were transferred" used to sit here (D5, D-100). It was
+ * accurate and it read like a disclaimer stapled to a table cell. The disclosure has not
+ * gone anywhere: the demo banner is on every page and a Test mode badge sits on the
+ * payment surface itself, which is where someone about to pay is actually looking. A
+ * status column is not the place to carry it a third time.
  */
 const STATUS_LABEL: Record<SettlementStatus, string> = {
   INITIATED: 'not sent yet',
   PENDING: 'waiting to be confirmed',
-  CONFIRMED: 'simulated payment — no funds were transferred',
+  CONFIRMED: 'settled',
   FAILED: 'rejected',
   CANCELLED: 'cancelled',
   EXPIRED: 'expired',

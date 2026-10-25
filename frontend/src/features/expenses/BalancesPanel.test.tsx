@@ -10,7 +10,9 @@ const { useBalances, useSimplifiedPlan } = vi.hoisted(() => ({
   useSimplifiedPlan: vi.fn(),
 }))
 vi.mock('./useExpenses', () => ({ useBalances, useSimplifiedPlan }))
+const { useSettlements } = vi.hoisted(() => ({ useSettlements: vi.fn() }))
 vi.mock('../settlements/useSettlements', () => ({
+  useSettlements,
   useCreateSettlement: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useStartOrder: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useGatewayCallback: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -47,6 +49,8 @@ describe('BalancesPanel', () => {
   beforeEach(() => {
     useBalances.mockReturnValue({ data: BALANCES, isPending: false, isError: false })
     useSimplifiedPlan.mockReturnValue({ data: PLAN })
+    // No payment in flight is the ordinary case; the tests that care set their own.
+    useSettlements.mockReturnValue({ data: [] })
   })
 
   it('shows each net position and the simplified plan', () => {
@@ -93,5 +97,49 @@ describe('BalancesPanel', () => {
 
     expect(screen.getByText('Nobody owes anybody.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Settle up' })).not.toBeInTheDocument()
+  })
+
+  describe('while a payment is already in flight', () => {
+    function inFlight(status: 'INITIATED' | 'PENDING') {
+      useSettlements.mockReturnValue({
+        data: [{ id: 's1', fromUser: SOMEONE.id, toUser: BOB, status, method: 'CASH' }],
+      })
+    }
+
+    it.each(['INITIATED', 'PENDING'] as const)(
+      'will not let you start another one (%s)',
+      (status) => {
+        // Clicking Settle up again made a second settlement for the same debt. The first
+        // confirms and the rest cannot, which is what produced an error for the person
+        // trying to confirm.
+        inFlight(status)
+        renderWithProviders(<BalancesPanel group={GROUP} youId={SOMEONE.id} />)
+
+        expect(screen.getByRole('button', { name: 'Settle up' })).toBeDisabled()
+        expect(screen.getByText(/already have a payment waiting/i)).toBeInTheDocument()
+      },
+    )
+
+    it('is offered again once that payment is finished', () => {
+      useSettlements.mockReturnValue({
+        data: [
+          { id: 's1', fromUser: SOMEONE.id, toUser: BOB, status: 'CONFIRMED', method: 'CASH' },
+        ],
+      })
+      renderWithProviders(<BalancesPanel group={GROUP} youId={SOMEONE.id} />)
+
+      expect(screen.getByRole('button', { name: 'Settle up' })).toBeEnabled()
+    })
+
+    it("is not blocked by somebody else's payment", () => {
+      // Two people can owe the same person at once; only your own in-flight payment is a
+      // reason to stop you starting one.
+      useSettlements.mockReturnValue({
+        data: [{ id: 's1', fromUser: BOB, toUser: SOMEONE.id, status: 'PENDING', method: 'CASH' }],
+      })
+      renderWithProviders(<BalancesPanel group={GROUP} youId={SOMEONE.id} />)
+
+      expect(screen.getByRole('button', { name: 'Settle up' })).toBeEnabled()
+    })
   })
 })
