@@ -102,6 +102,12 @@ app:
     # own claim immediately.
     claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
     purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
+  metrics:
+    # How often the scheduled gauges re-read the database (SL-704). Read on a schedule and
+    # held, never queried inside a scrape: a gauge callback runs on whichever thread is
+    # serving /actuator/prometheus, with no transaction and no bounded time, so a database
+    # hiccup there would hang the scrape -- monitoring taking down what it monitors.
+    refresh-ms: ${METRICS_REFRESH_MS:60000}
   outbox:
     # How long an event may sit unpublished. One second, because the whole latency budget
     # of the outbox is this number (ADR-005) -- an event is written on commit and does
@@ -218,6 +224,16 @@ spring:
   config:
     activate:
       on-profile: prod
+# One JSON object per line, deployed only (SL-704). The correlation id the filter puts in
+# the MDC becomes a field rather than a prefix in a string, which is the difference between
+# "grep the logs" and "show me everything that happened in this request".
+#
+# Prod only on purpose: the same lines are far easier to read as text while developing, and
+# nothing local is shipping logs anywhere that would parse them.
+logging:
+  structured:
+    format:
+      console: ecs
 springdoc:
   api-docs:
     enabled: false

@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -56,21 +57,25 @@ public class GatewayWebhookService {
     private final SettlementRepository settlements;
     private final WebhookEventRepository events;
     private final SettlementService settlementService;
+    private final MeterRegistry meters;
     private final Clock clock;
 
     @Autowired
     GatewayWebhookService(List<PaymentProvider> providers, SettlementRepository settlements,
-            WebhookEventRepository events, SettlementService settlementService) {
-        this(providers, settlements, events, settlementService, Clock.systemUTC());
+            WebhookEventRepository events, SettlementService settlementService,
+            MeterRegistry meters) {
+        this(providers, settlements, events, settlementService, meters, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     GatewayWebhookService(List<PaymentProvider> providers, SettlementRepository settlements,
-            WebhookEventRepository events, SettlementService settlementService, Clock clock) {
+            WebhookEventRepository events, SettlementService settlementService,
+            MeterRegistry meters, Clock clock) {
         this.providers = providers;
         this.settlements = settlements;
         this.events = events;
         this.settlementService = settlementService;
+        this.meters = meters;
         this.clock = clock;
     }
 
@@ -104,6 +109,34 @@ public class GatewayWebhookService {
      */
     @Transactional
     public Outcome handle(PaymentMethod method, ProviderWebhook webhook) {
+        try {
+            Outcome outcome = process(method, webhook);
+            counted(method, outcome.name());
+            return outcome;
+        } catch (ApiException rejected) {
+            // Counted too, and the one a person most wants to see: a delivery that failed
+            // verification is either a misconfigured secret or somebody probing a public
+            // POST endpoint, and both are invisible if only the happy outcomes are counted.
+            counted(method, "REJECTED");
+            throw rejected;
+        }
+    }
+
+    /**
+     * One counter with an {@code outcome} tag rather than a counter per outcome.
+     *
+     * <p>SL-704 names {@code webhook_duplicates_total}; this is that series, as
+     * {@code outcome="DUPLICATE"}. Flattening the outcome into the metric name would give
+     * five counters that cannot be summed, so "how many deliveries arrived at all" and
+     * "what fraction were duplicates" would both need a hardcoded list of every outcome
+     * that exists -- which is a list that goes stale the first time one is added.
+     */
+    private void counted(PaymentMethod method, String outcome) {
+        meters.counter("splitledger.webhook.deliveries",
+                "provider", method.name(), "outcome", outcome).increment();
+    }
+
+    private Outcome process(PaymentMethod method, ProviderWebhook webhook) {
         ProviderEvent event = providerFor(method)
                 .flatMap(provider -> provider.verifiedEvent(webhook))
                 .orElseThrow(() -> new ApiException(ErrorCode.PAYMENT_SIGNATURE_INVALID,

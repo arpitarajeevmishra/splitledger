@@ -1,0 +1,77 @@
+# Prometheus alerting rules (SL-704).
+#
+# Nothing scrapes these yet: the deployed stack is an API, a static site and Caddy, with no
+# Prometheus (SL-907). They are committed anyway, because an alert rule written at the same
+# time as the metric is a rule that matches what the metric actually means -- and one
+# written months later, by someone reading a dashboard, is a guess.
+#
+# Point a Prometheus at https://<domain>/actuator/prometheus and load this file.
+groups:
+  - name: splitledger-correctness
+    rules:
+      # The one that matters. Every ledger transaction's postings sum to zero, so every
+      # posting ever written sums to zero (ADR-003). A non-zero value does not mean some
+      # balance looks wrong -- it means the property every number in the product is derived
+      # from has been lost, and none of them can be trusted until somebody finds out why.
+      - alert: LedgerReconciliationDrift
+        expr: splitledger_ledger_reconciliation_drift_paise != 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ledger postings sum to {{ $value }} paise, which must be zero"
+          runbook: >-
+            Stop writing. Find the transaction whose postings do not balance
+            (group by txn_id, having sum(amount_paise) <> 0) and work out what wrote it.
+            Every balance in the product is derived from these rows.
+
+      # An alert that can only fire on a bad value is silent exactly when the application
+      # is down, which is the moment it is least safe to assume all is well. This fires on
+      # the absence of the series itself.
+      - alert: LedgerDriftUnmeasured
+        expr: absent(splitledger_ledger_reconciliation_drift_paise)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nothing is reporting ledger drift -- the correctness alert is blind"
+
+  - name: splitledger-outbox
+    rules:
+      # The only signal that separates a stopped publisher from an idle one. Both show no
+      # errors, no traffic and a healthy process; in one of them every notification in the
+      # product stopped hours ago (ADR-005).
+      - alert: OutboxStalled
+        expr: splitledger_outbox_lag_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest unpublished event is {{ $value }}s old"
+          runbook: >-
+            The publisher polls once a second. A lag in minutes means it is not running,
+            not scheduled, or failing on every event. Check for "could not publish" in the
+            logs, then for rows with a high attempts count.
+
+      # Events the publisher gave up on after three failures (V7). Each one is something
+      # nobody will ever be told about, so the threshold is one.
+      - alert: OutboxDeadLetters
+        expr: splitledger_outbox_dead_lettered > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} event(s) were abandoned unpublished"
+
+  - name: splitledger-payments
+    rules:
+      # A delivery that failed signature verification is either a misconfigured secret --
+      # in which case no payment will ever confirm by webhook again -- or somebody probing
+      # a public POST endpoint. Both are worth a look; neither shows up anywhere else.
+      - alert: WebhookDeliveriesRejected
+        expr: rate(splitledger_webhook_deliveries_total{outcome="REJECTED"}[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook deliveries from {{ $labels.provider }} are failing verification"
