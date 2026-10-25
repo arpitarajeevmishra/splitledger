@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { NotificationBell } from '../features/notifications/NotificationBell'
 import { Button } from './ui/Button'
 
 export function AppHeader({ section }: { section?: string }) {
@@ -18,6 +19,7 @@ export function AppHeader({ section }: { section?: string }) {
         )}
       </Link>
       <div className="flex items-center gap-3">
+        <NotificationBell />
         <span className="hidden text-sm text-ink-muted sm:inline">{user?.name}</span>
         <Button variant="ghost" onClick={() => void logout()}>
           Sign out

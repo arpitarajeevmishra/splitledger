@@ -186,3 +186,32 @@ export type CreateSettlement = {
   amountPaise: number
   method: PaymentMethod
 }
+
+export type NotificationType = 'EXPENSE_ADDED' | 'EXPENSE_VOIDED' | 'SETTLEMENT_CONFIRMED'
+
+/**
+ * The frozen message a notification was written with.
+ *
+ * Names, not ids to resolve: the server wrote them at the moment the event happened, so the
+ * bell renders without a lookup and keeps saying what it said even after a group is renamed.
+ */
+export type NotificationMessage = {
+  groupId: string
+  /** Null if the group was deleted outright, which archiving means should not happen. */
+  groupName: string | null
+  /** Null when a payment gateway confirmed a settlement and no person acted. */
+  actorId: string | null
+  actorName: string | null
+  /** Null for a settlement, which has no description of its own. */
+  description: string | null
+  amountPaise: number
+}
+
+export type AppNotification = {
+  id: string
+  type: NotificationType
+  message: NotificationMessage
+  /** Null while unread, which is also what the badge counts. */
+  readAt: string | null
+  createdAt: string
+}
