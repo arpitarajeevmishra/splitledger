@@ -1,6 +1,7 @@
 package com.splitledger.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
 
 import java.util.concurrent.TimeUnit;
@@ -131,6 +132,140 @@ class CacheConfigurationTest {
         @Bean
         RedisConnectionFactory redisConnectionFactory() {
             return mock(RedisConnectionFactory.class);
+        }
+    }
+
+    /**
+     * A cache that has stopped working must cost latency and nothing else.
+     *
+     * <p>Without an error handler, the exception comes out of the {@code @Cacheable} method
+     * itself, so a Redis that stops answering turns into a 500 on every balance in the
+     * product -- the opposite of ADR-015's claim that the cache is optional. "Optional"
+     * has to hold at runtime, not only at startup.
+     */
+    @Test
+    void aCacheThatThrowsIsAMissRatherThanAFailure() {
+        contextRunner
+                .withPropertyValues(REDIS_URL)
+                .withUserConfiguration(ExplodingCacheConfig.class)
+                .run(context -> {
+                    Counting counting = context.getBean(Counting.class);
+                    java.util.concurrent.atomic.AtomicInteger calls =
+                            context.getBean(java.util.concurrent.atomic.AtomicInteger.class);
+
+                    assertThat(counting.value("k")).isEqualTo("computed:k");
+                    assertThat(counting.value("k")).isEqualTo("computed:k");
+
+                    // Twice, because nothing was ever cached. The point is not the number
+                    // but that both calls returned an answer instead of a 500: a cache
+                    // that has stopped working costs repeated work, never a failure.
+                    assertThat(calls.get()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    void anEvictionThatThrowsDoesNotFailTheWriteThatCausedIt() {
+        contextRunner
+                .withPropertyValues(REDIS_URL)
+                .withUserConfiguration(ExplodingCacheConfig.class)
+                .run(context -> {
+                    // Swallowed deliberately. Failing here would roll back an expense that
+                    // was correctly recorded in order to protect a cache entry, which is
+                    // the wrong way round -- the entry goes stale until its TTL instead,
+                    // and the handler logs it at error level for exactly that reason.
+                    assertThatCode(() -> context.getBean(Counting.class).forget("k"))
+                            .doesNotThrowAnyException();
+                });
+    }
+
+    /** A cache manager whose every operation fails, standing in for a broker that stopped. */
+    @Configuration(proxyBeanMethods = false)
+    static class ExplodingCacheConfig {
+
+        @Bean
+        CacheManager cacheManager() {
+            org.springframework.cache.Cache broken =
+                    new org.springframework.cache.Cache() {
+                        @Override
+                        public String getName() {
+                            return "bal";
+                        }
+
+                        @Override
+                        public Object getNativeCache() {
+                            return this;
+                        }
+
+                        @Override
+                        public ValueWrapper get(Object key) {
+                            throw new IllegalStateException("cache is down");
+                        }
+
+                        @Override
+                        public <T> T get(Object key, Class<T> type) {
+                            throw new IllegalStateException("cache is down");
+                        }
+
+                        @Override
+                        public <T> T get(Object key, java.util.concurrent.Callable<T> loader) {
+                            throw new IllegalStateException("cache is down");
+                        }
+
+                        @Override
+                        public void put(Object key, Object value) {
+                            throw new IllegalStateException("cache is down");
+                        }
+
+                        @Override
+                        public void evict(Object key) {
+                            throw new IllegalStateException("cache is down");
+                        }
+
+                        @Override
+                        public void clear() {
+                            throw new IllegalStateException("cache is down");
+                        }
+                    };
+            return new org.springframework.cache.support.SimpleCacheManager() {
+                @Override
+                public org.springframework.cache.Cache getCache(String name) {
+                    return broken;
+                }
+            };
+        }
+
+        @Bean
+        java.util.concurrent.atomic.AtomicInteger calls() {
+            return new java.util.concurrent.atomic.AtomicInteger();
+        }
+
+        @Bean
+        Counting counting(java.util.concurrent.atomic.AtomicInteger calls) {
+            return new Counting(calls);
+        }
+    }
+
+    /** Stands in for the balance lookup: counts whether the real work actually ran. */
+    static class Counting {
+
+        // Its own bean, not a field read off this object: getBean returns the CGLIB proxy
+        // and the body runs on the target, so a counter field here reads zero forever and
+        // the test would pass against an implementation that never ran anything.
+        private final java.util.concurrent.atomic.AtomicInteger calls;
+
+        Counting(java.util.concurrent.atomic.AtomicInteger calls) {
+            this.calls = calls;
+        }
+
+        @org.springframework.cache.annotation.Cacheable(cacheNames = "bal", key = "#key")
+        String value(String key) {
+            calls.incrementAndGet();
+            return "computed:" + key;
+        }
+
+        @org.springframework.cache.annotation.CacheEvict(cacheNames = "bal", key = "#key")
+        void forget(String key) {
+            // The annotation is the behaviour.
         }
     }
 }
