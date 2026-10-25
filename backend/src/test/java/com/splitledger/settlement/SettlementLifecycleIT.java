@@ -218,7 +218,15 @@ class SettlementLifecycleIT {
         act(p.alice(), p.settlementId(), "confirm").andExpect(status().isOk());
         act(p.alice(), second, "confirm")
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.code").value("SETTLEMENT_EXCEEDS_OUTSTANDING"));
+                .andExpect(jsonPath("$.code").value("SETTLEMENT_EXCEEDS_OUTSTANDING"))
+                // Alice is the one being paid. She used to be told "you do not owe this
+                // group anything", which is true, about somebody else, and no answer to
+                // what she just clicked. This test asserted only the code, which is how
+                // that survived being read by a real person.
+                .andExpect(jsonPath("$.detail").value(
+                        "That debt is already settled, so there is nothing left to pay"))
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("You"))));
 
         assertThat(netOf(p.groupId(), p.alice(), p.alice())).isZero();
     }

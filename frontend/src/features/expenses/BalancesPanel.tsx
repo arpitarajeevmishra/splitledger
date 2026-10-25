@@ -4,6 +4,7 @@ import type { GroupDetail } from '../../api/types'
 import { Button } from '../../components/ui/Button'
 import { formatPaise } from '../../lib/money'
 import { SettleUpDialog } from '../settlements/SettleUpDialog'
+import { useSettlements } from '../settlements/useSettlements'
 import { useBalances, useSimplifiedPlan } from './useExpenses'
 
 export function BalancesPanel({ group, youId }: { group: GroupDetail; youId: string | undefined }) {
@@ -14,6 +15,21 @@ export function BalancesPanel({ group, youId }: { group: GroupDetail; youId: str
   // The plan's suggestion for you, if it has one. Pre-filling it is the difference
   // between "what should I pay" being answered and being retyped.
   const yours = plan?.transfers.find((transfer) => transfer.from === youId)
+
+  const { data: settlements } = useSettlements(group.id)
+
+  /**
+   * A payment this person started that has not finished yet.
+   *
+   * INITIATED and PENDING both count: the first is created and not yet sent, the second
+   * is sent and waiting on the other person. Either way a second settlement for the same
+   * debt can only end in one of them failing.
+   */
+  const awaitingPayment = settlements?.find(
+    (settlement) =>
+      settlement.fromUser === youId &&
+      (settlement.status === 'INITIATED' || settlement.status === 'PENDING'),
+  )
 
   const nameOf = (userId: string) =>
     group.members.find((member) => member.userId === userId)?.name ?? 'Someone'
@@ -89,9 +105,26 @@ export function BalancesPanel({ group, youId }: { group: GroupDetail; youId: str
                 what.
               </p>
               {yours !== undefined && (
-                <Button className="mt-3" onClick={() => setSettling(true)}>
-                  Settle up
-                </Button>
+                <>
+                  <Button
+                    className="mt-3"
+                    onClick={() => setSettling(true)}
+                    disabled={awaitingPayment !== undefined}
+                  >
+                    Settle up
+                  </Button>
+                  {awaitingPayment !== undefined && (
+                    // Without this the button stays live while a payment is already in
+                    // flight, and clicking it again makes a second settlement for the same
+                    // debt. The first one confirms, the rest cannot -- which is what
+                    // produced "you do not owe this group anything" for the person trying
+                    // to confirm.
+                    <p className="mt-2 text-[12px] text-ink-muted">
+                      You already have a payment waiting to be confirmed. Settle up again once it is
+                      finished or cancelled.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
