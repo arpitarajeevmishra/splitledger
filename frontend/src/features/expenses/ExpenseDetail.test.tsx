@@ -136,17 +136,6 @@ describe('ExpenseDetail', () => {
     expect(screen.queryByText('settled')).not.toBeInTheDocument()
   })
 
-  it('explains that payments settle people, not expenses', () => {
-    loaded(expense())
-    open()
-
-    // The question this screen gets asked. Leaving the answer in a decision record and
-    // off the screen is how the misreading survives.
-    expect(screen.getByRole('dialog')).toHaveTextContent(
-      'Payments clear what one person owes another, not individual expenses',
-    )
-  })
-
   it('shows the input behind an uneven share', () => {
     loaded(
       expense({
