@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
@@ -49,6 +50,9 @@ class BalanceFlowIT {
 
     @Autowired
     private GroupMembershipService membership;
+
+    @Autowired
+    private com.splitledger.settlement.application.SettlementService settlements;
 
     @Autowired
     private BalanceService balances;
@@ -298,5 +302,88 @@ class BalanceFlowIT {
         mockMvc.perform(get("/api/v1/groups/" + groupId + "/balances")
                         .header("Authorization", "Bearer " + mallory.token()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theNetPositionAcrossGroupsAddsUpAndKeepsItsSign() throws Exception {
+        // The dashboard's one number. It was hardcoded to zero until this endpoint
+        // existed, so everybody was told they were square whatever they owed.
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+
+        // Bob owes Alice 450 in one group...
+        UUID flat = newGroup(alice, "Flat 402");
+        membership.joinOrRejoin(flat, bob.id(), Role.MEMBER);
+        expense(alice, flat, 90_000L, List.of(alice.id(), bob.id()));
+
+        // ...and is owed 300 in another, where he paid.
+        UUID trip = newGroup(bob, "Goa trip");
+        membership.joinOrRejoin(trip, alice.id(), Role.MEMBER);
+        expense(bob, trip, 60_000L, List.of(alice.id(), bob.id()));
+
+        // Net: he owes 450 and is owed 300, so he owes 150 overall, across two groups.
+        mockMvc.perform(get("/api/v1/balances/me")
+                        .header("Authorization", "Bearer " + bob.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netPaise").value(-15_000))
+                .andExpect(jsonPath("$.unsettledGroups").value(2))
+                .andExpect(jsonPath("$.settled").value(false));
+
+        // And the mirror image for Alice, which is what makes the sign meaningful rather
+        // than a convention nobody checked.
+        mockMvc.perform(get("/api/v1/balances/me")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netPaise").value(15_000))
+                .andExpect(jsonPath("$.settled").value(false));
+    }
+
+    @Test
+    void someoneWithNothingOwedIsSettledRatherThanAbsent() throws Exception {
+        Account alone = newUser("Alone");
+
+        // No groups, no postings: zero is the right answer and the endpoint has to say so
+        // rather than omit the figure.
+        mockMvc.perform(get("/api/v1/balances/me")
+                        .header("Authorization", "Bearer " + alone.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netPaise").value(0))
+                .andExpect(jsonPath("$.unsettledGroups").value(0))
+                .andExpect(jsonPath("$.settled").value(true));
+    }
+
+    @Test
+    void aGroupThatHasBeenSettledStopsCounting() throws Exception {
+        Account alice = newUser("Alice");
+        Account bob = newUser("Bob");
+        UUID flat = newGroup(alice, "Flat 402");
+        membership.joinOrRejoin(flat, bob.id(), Role.MEMBER);
+        expense(alice, flat, 90_000L, List.of(alice.id(), bob.id()));
+
+        com.splitledger.settlement.domain.Settlement cash = settlements.create(flat, bob.id(),
+                alice.id(), 45_000L, com.splitledger.common.payment.PaymentMethod.CASH);
+        settlements.markPaid(cash.id(), bob.id());
+        settlements.confirm(cash.id(), alice.id());
+
+        mockMvc.perform(get("/api/v1/balances/me")
+                        .header("Authorization", "Bearer " + bob.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.netPaise").value(0))
+                // The query drops settled groups, so the count goes with the figure.
+                .andExpect(jsonPath("$.unsettledGroups").value(0))
+                .andExpect(jsonPath("$.settled").value(true));
+    }
+
+    @Test
+    void itIsAlwaysTheCallersOwnPosition() throws Exception {
+        // No user id in the path, so there is nothing to tamper with. Worth asserting
+        // rather than assuming: this is the one endpoint that returns a person's finances
+        // without naming a group to be a member of.
+        Account alice = newUser("Alice");
+        mockMvc.perform(get("/api/v1/balances/me"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/balances/me")
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(status().isOk());
     }
 }

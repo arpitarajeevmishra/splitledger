@@ -46,6 +46,14 @@ export type GroupDetail = {
   archivedAt: string | null
 }
 
+/** Where you stand across every group, from the ledger. */
+export type NetPosition = {
+  /** Positive when your groups owe you, negative when you owe them. */
+  netPaise: number
+  unsettledGroups: number
+  settled: boolean
+}
+
 export type InviteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'REVOKED'
 
 /** As an admin sees it in a listing. Deliberately carries no token. */

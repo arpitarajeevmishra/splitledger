@@ -7,6 +7,7 @@ import type {
   CreateExpense,
   Expense,
   ExpenseSummary,
+  NetPosition,
   SimplifiedPlan,
 } from '../../api/types'
 
@@ -19,6 +20,7 @@ export const expenseKeys = {
   list: (groupId: string) => [...expenseKeys.all, 'list', groupId] as const,
   balances: (groupId: string) => [...expenseKeys.all, 'balances', groupId] as const,
   simplified: (groupId: string) => [...expenseKeys.all, 'simplified', groupId] as const,
+  myNetPosition: () => [...expenseKeys.all, 'net-position'] as const,
   activity: (groupId: string) => [...expenseKeys.all, 'activity', groupId] as const,
 }
 
@@ -26,6 +28,21 @@ export function useExpenses(groupId: string) {
   return useQuery<ExpenseSummary[]>({
     queryKey: expenseKeys.list(groupId),
     queryFn: () => expenses.list(groupId),
+  })
+}
+
+/**
+ * Where you stand across every group.
+ *
+ * <p>Refetched when the window regains focus, because the figure changes when somebody
+ * else records an expense or confirms a payment -- neither of which this tab would hear
+ * about. The dashboard is also where people land after doing exactly that in another tab.
+ */
+export function useMyNetPosition() {
+  return useQuery<NetPosition>({
+    queryKey: expenseKeys.myNetPosition(),
+    queryFn: balances.mine,
+    refetchOnWindowFocus: true,
   })
 }
 

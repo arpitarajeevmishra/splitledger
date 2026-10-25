@@ -46,6 +46,26 @@ public class BalanceService {
     }
 
     /**
+     * Where this person stands across all their groups.
+     *
+     * <p>No group id and so no {@code requireMember}: the only argument is the caller's
+     * own id, taken from their token rather than from the request, so there is nothing
+     * here to authorise against. Passing a user id in would make it an endpoint for
+     * reading other people's finances.
+     */
+    @Transactional(readOnly = true)
+    public NetPosition netAcrossGroups(UUID userId) {
+        long total = 0L;
+        int groups = 0;
+        for (Object[] row : queries.netByGroupForUser(userId)) {
+            // The query already drops the settled groups, so every row counts.
+            total += ((Number) row[1]).longValue();
+            groups++;
+        }
+        return new NetPosition(total, groups);
+    }
+
+    /**
      * Net positions only, for callers that authorise against them.
      *
      * <p>Separate from {@link #of} because settlement validation needs the net figures and
