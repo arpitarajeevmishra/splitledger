@@ -1,6 +1,7 @@
 package com.splitledger.outbox.infra;
 
 import com.splitledger.outbox.domain.OutboxEvent;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -41,4 +42,24 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
             + "order by created_at limit :max for update skip locked",
             nativeQuery = true)
     List<OutboxEvent> claimUnpublished(@Param("max") int max);
+
+    /**
+     * When the oldest thing still waiting was written, or null when nothing is waiting.
+     *
+     * <p>The input to {@code outbox_lag_seconds}, which is the only metric that can tell a
+     * stopped publisher from an idle one. Both look identical in every other signal: no
+     * errors, no traffic, a healthy process -- and in one of them every notification in the
+     * product has silently stopped.
+     *
+     * <p>Dead letters are excluded. They are not waiting; they have been given up on, and
+     * counting them would park the lag at the age of the oldest failure forever.
+     */
+    @Query(value = "select min(created_at) from outbox_events "
+            + "where published_at is null and dead_lettered_at is null",
+            nativeQuery = true)
+    Instant oldestUnpublished();
+
+    @Query(value = "select count(*) from outbox_events where dead_lettered_at is not null",
+            nativeQuery = true)
+    long countDeadLettered();
 }

@@ -264,3 +264,44 @@ elsewhere, so the only thing you re-enter is the `.env`.
 | API container unhealthy, Caddy fine | Database. Check `DB_URL`, `DB_USER`, `DB_PASSWORD`; Flyway connects on startup and fails loudly |
 | Instance disappeared | Oracle reclaimed it as idle. See the sizing note above, and re-provision |
 | `permission denied` on `docker` right after provisioning | The docker group needs a fresh login. `exit`, then ssh back in |
+
+## Observability (SL-704)
+
+`/actuator/prometheus` is exposed on the API and carries, besides Spring Boot's own HTTP
+and JVM metrics, three series this application adds:
+
+| series | what it means |
+|---|---|
+| `splitledger_ledger_reconciliation_drift_paise` | every posting ever written, summed. **Must be zero** (ADR-003) |
+| `splitledger_outbox_lag_seconds` | age of the oldest unpublished event; zero when nothing is waiting |
+| `splitledger_webhook_deliveries_total{provider,outcome}` | webhook deliveries, including `DUPLICATE` and `REJECTED` |
+
+`observability/alerts.yml` holds the Prometheus rules and `observability/dashboard.json` a
+Grafana dashboard. **Nothing scrapes either yet** — the deployed stack is the API, the
+static site and Caddy, with no Prometheus (that is SL-907). They are committed now because
+a rule written beside the metric matches what the metric means, while one written months
+later from a dashboard is a guess.
+
+**The endpoint is not reachable from the internet, and that is deliberate.** The Caddyfile
+routes `/api/*` and `/webhooks/*` to the API and everything else to the static site, so
+`https://<domain>/actuator/prometheus` returns the SPA's `index.html` with a `200` — which
+looks like success and is not. Checked, because a `200` from `curl` was exactly convincing
+enough to get this wrong in the first draft of this file.
+
+So a scraper has to reach it from inside the compose network, as `http://api:8080/actuator/prometheus`.
+Running Prometheus as another service in `docker-compose.prod.yml` is the straightforward
+way and needs no new routing. Exposing it through Caddy instead would publish operational
+detail — every endpoint's latency, the state of the outbox, the size of the ledger — to
+anybody who asks, so it would need authentication in front of it first.
+
+Then load `alerts.yml` as a rule file and import `dashboard.json` into Grafana.
+
+Two things worth knowing before trusting the alerts:
+
+- `LedgerReconciliationDrift` fires on a non-zero value, so it is silent when nothing is
+  being scraped at all. `LedgerDriftUnmeasured` covers that, by alerting on the absence of
+  the series.
+- The gauges are refreshed on a schedule (`METRICS_REFRESH_MS`, default 60s) and held, not
+  queried during a scrape. A gauge callback runs on whichever thread serves the scrape,
+  with no transaction and no timeout, so a slow database there would hang the scrape —
+  monitoring taking down the thing it monitors.
