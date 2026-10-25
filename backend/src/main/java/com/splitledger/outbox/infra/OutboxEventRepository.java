@@ -29,11 +29,15 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
      * <p>Oldest first, because the events of one group have to reach a consumer in the
      * order they were written, and {@code created_at} is the order they were written in.
      *
+     * <p>Dead letters are excluded here rather than filtered afterwards, so that an event
+     * the publisher has given up on stops consuming a slot in every batch forever (V7).
+     *
      * <p>Native because JPQL has no way to say {@code SKIP LOCKED}: the JPA lock hints
      * offer {@code PESSIMISTIC_WRITE} and a timeout, and a timeout is the opposite of what
      * is wanted here -- waiting, then failing, rather than moving on to work nobody holds.
      */
     @Query(value = "select * from outbox_events where published_at is null "
+            + "and dead_lettered_at is null "
             + "order by created_at limit :max for update skip locked",
             nativeQuery = true)
     List<OutboxEvent> claimUnpublished(@Param("max") int max);

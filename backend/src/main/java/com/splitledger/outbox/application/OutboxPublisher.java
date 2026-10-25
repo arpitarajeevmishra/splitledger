@@ -47,20 +47,23 @@ public class OutboxPublisher {
     private final OutboxEventRepository events;
     private final EventPublisher bus;
     private final int batchSize;
+    private final int maxAttempts;
     private final Clock clock;
 
     @Autowired
     OutboxPublisher(OutboxEventRepository events, EventPublisher bus,
-            @Value("${app.outbox.batch-size}") int batchSize) {
-        this(events, bus, batchSize, Clock.systemUTC());
+            @Value("${app.outbox.batch-size}") int batchSize,
+            @Value("${app.outbox.max-attempts}") int maxAttempts) {
+        this(events, bus, batchSize, maxAttempts, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     OutboxPublisher(OutboxEventRepository events, EventPublisher bus, int batchSize,
-            Clock clock) {
+            int maxAttempts, Clock clock) {
         this.events = events;
         this.bus = bus;
         this.batchSize = batchSize;
+        this.maxAttempts = maxAttempts;
         this.clock = clock;
     }
 
@@ -87,8 +90,16 @@ public class OutboxPublisher {
                 // Deliberately swallowed: letting this out would mark the transaction
                 // rollback-only and discard the stamps of every event that did publish,
                 // turning one bad event into a batch that can never drain.
-                log.warn("outbox: could not publish event {} ({}), will retry", event.id(),
-                        failure.toString());
+                if (event.failedAttempt(now, maxAttempts)) {
+                    // Loud, because this is the one outbox outcome a person has to look at:
+                    // the event is now nobody's, and nothing will retry it.
+                    log.error("outbox: giving up on event {} after {} attempts ({})",
+                            event.id(), event.attempts(), failure.toString());
+                } else {
+                    log.warn("outbox: could not publish event {} (attempt {} of {}: {}),"
+                            + " will retry", event.id(), event.attempts(), maxAttempts,
+                            failure.toString());
+                }
             }
         }
         log.debug("outbox: published {} of {} claimed", published, claimed.size());

@@ -23,8 +23,12 @@ public final class SettlementEvents {
     /**
      * @param method the payment method's name rather than the enum, so that adding or
      *     renaming one is not a change to a published payload
+     * @param confirmedBy whoever said it had arrived, and <b>null when a gateway did</b>.
+     *     A consumer needs this to know who not to tell: the person who confirmed a
+     *     payment does not want to be notified that it was confirmed. Null means nobody
+     *     acted, so it is news to both parties.
      */
     public record Confirmed(UUID settlementId, UUID groupId, UUID fromUser, UUID toUser,
-            long amountPaise, String method) {
+            long amountPaise, String method, UUID confirmedBy) {
     }
 }
