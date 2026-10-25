@@ -6,6 +6,7 @@ import type {
   CreateExpense,
   Expense,
   ExpenseSummary,
+  NetPosition,
   SimplifiedPlan,
 } from './types'
 
@@ -47,6 +48,9 @@ export function balancesApi(client: AxiosInstance = api) {
   return {
     of: (groupId: string) =>
       client.get<Balances>(`/groups/${groupId}/balances`).then((r) => r.data),
+
+    /** Where you stand across every group. Your own id comes from the token. */
+    mine: () => client.get<NetPosition>('/balances/me').then((r) => r.data),
 
     simplified: (groupId: string) =>
       client.get<SimplifiedPlan>(`/groups/${groupId}/balances/simplified`).then((r) => r.data),

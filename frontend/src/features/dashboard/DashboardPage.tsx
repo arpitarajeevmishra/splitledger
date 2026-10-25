@@ -1,3 +1,5 @@
+import type { NetPosition } from '../../api/types'
+import { useMyNetPosition } from '../expenses/useExpenses'
 import { formatPaise } from '../../lib/money'
 import { useAuth } from '../../auth/useAuth'
 import { AppHeader } from '../../components/AppHeader'
@@ -11,8 +13,27 @@ import { GroupsPanel } from '../groups/GroupsPanel'
  * cannot yet compute. Fabricated figures in a ledger product are the one thing worth
  * avoiding at any stage.
  */
+/**
+ * What the figure means, in words, because a signed number on its own is ambiguous.
+ *
+ * The amount above is shown unsigned: "you owe ₹450" reads better than "-₹450", and a
+ * minus sign in front of money is easy to miss at a glance on the one screen that is
+ * meant to answer "am I square".
+ */
+function describe(position: NetPosition): string {
+  if (position.settled) {
+    return 'Nothing owed either way.'
+  }
+  const groups = position.unsettledGroups === 1 ? '1 group' : `${position.unsettledGroups} groups`
+  return position.netPaise > 0
+    ? `You are owed this, across ${groups}.`
+    : `You owe this, across ${groups}.`
+}
+
 export function DashboardPage() {
   const { user } = useAuth()
+
+  const { data: position } = useMyNetPosition()
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface">
@@ -27,10 +48,10 @@ export function DashboardPage() {
           <p className="tabular mt-2 text-[32px] leading-[38px] font-semibold text-ink">
             {/* Through formatPaise rather than written out, so the one place that turns
                 paise into rupees is the one place that has tests. */}
-            {formatPaise(0)}
+            {position === undefined ? '—' : formatPaise(Math.abs(position.netPaise))}
           </p>
           <p className="mt-1 text-sm text-ink-muted">
-            Nothing owed either way &mdash; expenses arrive in the next sprint.
+            {position === undefined ? 'Working out where you stand…' : describe(position)}
           </p>
         </section>
 

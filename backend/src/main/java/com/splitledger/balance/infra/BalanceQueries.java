@@ -25,6 +25,26 @@ public interface BalanceQueries extends JpaRepository<LedgerPosting, Long> {
     List<Object[]> netByUser(@Param("groupId") UUID groupId);
 
     /**
+     * This person's net in each group where it is not zero, across every group at once.
+     *
+     * <p>From the ledger, like {@link #netByUser}, because the ledger is what a balance
+     * <em>is</em> -- summing expenses and settlements again here would be a second
+     * derivation that could disagree with the first.
+     *
+     * <p>No membership filter, and none is needed: a member may only leave a group once
+     * their balance is zero, so a group they have left contributes nothing to this sum by
+     * construction. Filtering on membership would add a join to exclude rows that are
+     * already zero.
+     *
+     * @return rows of (group_id, net), omitting groups that are settled
+     */
+    @Query(value = "select group_id, sum(amount_paise) as net "
+            + "from ledger_postings where user_id = :userId "
+            + "group by group_id having sum(amount_paise) <> 0",
+            nativeQuery = true)
+    List<Object[]> netByGroupForUser(@Param("userId") UUID userId);
+
+    /**
      * Who owes whom, from the source tables.
      *
      * <p>A participant's share is a debt to whoever paid -- except their own share of
