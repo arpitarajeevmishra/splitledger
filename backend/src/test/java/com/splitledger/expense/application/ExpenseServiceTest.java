@@ -25,6 +25,7 @@ import com.splitledger.group.domain.GroupMember;
 import com.splitledger.group.domain.Role;
 import com.splitledger.group.infra.GroupMemberRepository;
 import com.splitledger.ledger.application.LedgerService;
+import com.splitledger.outbox.application.OutboxRecorder;
 import com.splitledger.ledger.domain.TransactionType;
 import java.time.Clock;
 import java.time.Instant;
@@ -62,6 +63,8 @@ class ExpenseServiceTest {
     private GroupLock groupLock;
     @Mock
     private LedgerService ledger;
+    @Mock
+    private OutboxRecorder outbox;
 
     private ExpenseService service;
     private UUID groupId;
@@ -76,7 +79,7 @@ class ExpenseServiceTest {
         bob = UUID.randomUUID();
         carol = UUID.randomUUID();
         service = new ExpenseService(expenses, splits, members, guard, groupLock, ledger,
-                new AccountLimits(20, 50, 200), Clock.fixed(NOW, ZoneOffset.UTC));
+                new AccountLimits(20, 50, 200), outbox, Clock.fixed(NOW, ZoneOffset.UTC));
 
         when(groupLock.acquire(groupId))
                 .thenReturn(ExpenseGroup.create("Flat 402", "INR", alice, NOW));
