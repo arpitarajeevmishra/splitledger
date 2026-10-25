@@ -282,8 +282,19 @@ static site and Caddy, with no Prometheus (that is SL-907). They are committed n
 a rule written beside the metric matches what the metric means, while one written months
 later from a dashboard is a guess.
 
-To use them, point a Prometheus at `https://<domain>/actuator/prometheus`, load
-`alerts.yml` as a rule file, and import `dashboard.json` into Grafana.
+**The endpoint is not reachable from the internet, and that is deliberate.** The Caddyfile
+routes `/api/*` and `/webhooks/*` to the API and everything else to the static site, so
+`https://<domain>/actuator/prometheus` returns the SPA's `index.html` with a `200` — which
+looks like success and is not. Checked, because a `200` from `curl` was exactly convincing
+enough to get this wrong in the first draft of this file.
+
+So a scraper has to reach it from inside the compose network, as `http://api:8080/actuator/prometheus`.
+Running Prometheus as another service in `docker-compose.prod.yml` is the straightforward
+way and needs no new routing. Exposing it through Caddy instead would publish operational
+detail — every endpoint's latency, the state of the outbox, the size of the ledger — to
+anybody who asks, so it would need authentication in front of it first.
+
+Then load `alerts.yml` as a rule file and import `dashboard.json` into Grafana.
 
 Two things worth knowing before trusting the alerts:
 

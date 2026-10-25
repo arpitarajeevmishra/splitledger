@@ -5,7 +5,10 @@
 # time as the metric is a rule that matches what the metric actually means -- and one
 # written months later, by someone reading a dashboard, is a guess.
 #
-# Point a Prometheus at https://<domain>/actuator/prometheus and load this file.
+# Point a Prometheus at http://api:8080/actuator/prometheus from inside the compose network
+# and load this file. Not the public URL: Caddy routes everything that is not /api or
+# /webhooks to the static site, so https://<domain>/actuator/prometheus answers 200 with the
+# SPA's index.html. See deploy/README.md.
 groups:
   - name: splitledger-correctness
     rules:
