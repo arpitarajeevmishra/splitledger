@@ -18,6 +18,8 @@ const activity = activityApi()
 export const expenseKeys = {
   all: ['expenses'] as const,
   list: (groupId: string) => [...expenseKeys.all, 'list', groupId] as const,
+  detail: (expenseId: string) => [...expenseKeys.all, 'detail', expenseId] as const,
+  details: () => [...expenseKeys.all, 'detail'] as const,
   balances: (groupId: string) => [...expenseKeys.all, 'balances', groupId] as const,
   simplified: (groupId: string) => [...expenseKeys.all, 'simplified', groupId] as const,
   myNetPosition: () => [...expenseKeys.all, 'net-position'] as const,
@@ -38,6 +40,21 @@ export function useExpenses(groupId: string) {
  * else records an expense or confirms a payment -- neither of which this tab would hear
  * about. The dashboard is also where people land after doing exactly that in another tab.
  */
+/**
+ * One expense with its split.
+ *
+ * <p>The list endpoint returns summaries and no splits, so a breakdown costs a request per
+ * expense. Fetched only while one is open: a group with fifty expenses would otherwise
+ * fetch fifty of these to show none of them.
+ */
+export function useExpense(expenseId: string | null) {
+  return useQuery<Expense>({
+    queryKey: expenseKeys.detail(expenseId ?? ''),
+    queryFn: () => expenses.detail(expenseId ?? ''),
+    enabled: expenseId !== null,
+  })
+}
+
 export function useMyNetPosition() {
   return useQuery<NetPosition>({
     queryKey: expenseKeys.myNetPosition(),
@@ -86,6 +103,9 @@ export function useActivity(groupId: string) {
 function invalidateMoney(queryClient: ReturnType<typeof useQueryClient>, groupId: string) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: expenseKeys.list(groupId) }),
+    // Every detail, not one: voiding an expense is the thing most likely to be done
+    // with its own breakdown open, and replacing one rewrites the split outright.
+    queryClient.invalidateQueries({ queryKey: expenseKeys.details() }),
     queryClient.invalidateQueries({ queryKey: expenseKeys.balances(groupId) }),
     queryClient.invalidateQueries({ queryKey: expenseKeys.simplified(groupId) }),
     queryClient.invalidateQueries({ queryKey: expenseKeys.activity(groupId) }),

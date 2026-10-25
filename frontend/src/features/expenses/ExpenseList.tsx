@@ -4,6 +4,7 @@ import type { GroupDetail } from '../../api/types'
 import { Button } from '../../components/ui/Button'
 import { formatDate } from '../../lib/format'
 import { formatPaise } from '../../lib/money'
+import { ExpenseDetail } from './ExpenseDetail'
 import { ExpenseForm } from './ExpenseForm'
 import { useExpenses, useVoidExpense } from './useExpenses'
 
@@ -11,6 +12,7 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
   const { data: expenses, isPending, isError, error } = useExpenses(group.id)
   const voidExpense = useVoidExpense(group.id)
   const [adding, setAdding] = useState(false)
+  const [openExpense, setOpenExpense] = useState<string | null>(null)
   const [voidError, setVoidError] = useState<string | null>(null)
 
   const nameOf = (userId: string) =>
@@ -68,7 +70,14 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
                 key={expense.id}
                 className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0"
               >
-                <span className="min-w-0 flex-1">
+                {/* A button rather than a click handler on the row: the row also holds
+                    Void, and a clickable parent would mean every Void press opened the
+                    breakdown behind the confirmation. */}
+                <button
+                  type="button"
+                  onClick={() => setOpenExpense(expense.id)}
+                  className="min-w-0 flex-1 cursor-pointer rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+                >
                   <span
                     className={`block truncate text-sm ${
                       // Struck through rather than hidden: a voided expense is part of
@@ -83,7 +92,7 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
                     {nameOf(expense.paidBy)} &middot; {formatDate(expense.expenseDate)}
                     {voided && ' · voided'}
                   </span>
-                </span>
+                </button>
                 <span
                   className={`tabular font-mono text-sm ${
                     voided ? 'text-ink-dim line-through' : 'text-ink'
@@ -107,6 +116,7 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
       )}
 
       <ExpenseForm group={group} open={adding} onClose={() => setAdding(false)} />
+      <ExpenseDetail group={group} expenseId={openExpense} onClose={() => setOpenExpense(null)} />
     </section>
   )
 }
