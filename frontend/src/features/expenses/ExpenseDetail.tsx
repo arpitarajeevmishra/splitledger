@@ -126,15 +126,6 @@ export function ExpenseDetail({
               )
             })}
           </ul>
-
-          {/* Said here rather than only in a decision record: the question this screen
-              gets asked is "is this one paid", and the answer is that the product does
-              not work that way. Hiding that would make "settled" read as a claim about
-              this row, which it is not. */}
-          <p className="mt-3 text-xs text-ink-dim">
-            Payments clear what one person owes another, not individual expenses — so a share reads
-            as settled once the two of them are square overall.
-          </p>
         </>
       )}
     </Dialog>
