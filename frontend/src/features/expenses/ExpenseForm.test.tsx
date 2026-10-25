@@ -112,8 +112,34 @@ describe('ExpenseForm', () => {
       await userEvent.type(screen.getByLabelText(`Exact amounts for ${name}`), '300')
     }
 
-    expect(screen.getByRole('status')).toHaveTextContent(/Adds up/i)
+    // The label and the number have to agree. "Adds up ₹0.00" was the old
+    // pairing: the label flipped when the split completed and the figure stayed
+    // the remainder, which is zero by definition.
+    expect(screen.getByRole('status')).toHaveTextContent(/Adds up to/i)
+    expect(screen.getByRole('status')).toHaveTextContent('₹900.00')
+    expect(screen.getByRole('status')).not.toHaveTextContent('₹0.00')
     expect(addButton()).toBeEnabled()
+  })
+
+  it('claims nothing before an amount has been entered', () => {
+    // A blank form used to show a green "Adds up ₹0.00": the preview returns a zero
+    // remainder alongside its error, and a zero remainder alone was taken to mean valid.
+    renderForm()
+
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Adds up/i)
+    expect(addButton()).toBeDisabled()
+  })
+
+  it('counts down what is still unallocated', async () => {
+    renderForm()
+    await userEvent.type(screen.getByLabelText('Description'), 'Dinner')
+    await userEvent.type(screen.getByLabelText('Amount'), '900')
+    await userEvent.click(screen.getByRole('button', { name: 'Exact amounts' }))
+    await userEvent.type(screen.getByLabelText('Exact amounts for Alice Ray'), '300')
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Remaining/i)
+    expect(screen.getByRole('status')).toHaveTextContent('₹600.00')
+    expect(addButton()).toBeDisabled()
   })
 
   it('says when somebody has to take the extra paisa', async () => {

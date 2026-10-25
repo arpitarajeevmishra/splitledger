@@ -44,7 +44,18 @@ export function SplitEditor({
   onValueChange: (userId: string, raw: string) => void
   preview: SplitPreview
 }) {
-  const settled = preview.remainingPaise === 0
+  /**
+   * What the strip below should say.
+   *
+   * `remainingPaise === 0` alone was doing two jobs badly. It is also true before anyone
+   * has typed an amount -- the preview returns a zero remainder with an error set -- so a
+   * blank form showed a green "Adds up". And once a split did add up, the label changed
+   * to "Adds up" while the number stayed the remainder, which is zero by definition:
+   * "Adds up ₹0.00", a sentence that reads as "these splits total nothing".
+   */
+  const allocated = [...preview.allocation.values()].reduce((sum, paise) => sum + paise, 0)
+  const settled = preview.error === null && preview.remainingPaise === 0 && allocated > 0
+  const nothingEnteredYet = !settled && preview.remainingPaise === 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,14 +145,22 @@ export function SplitEditor({
         className={`flex items-center justify-between rounded border px-3 py-2 text-xs ${
           settled
             ? 'border-positive/40 bg-positive/10 text-positive'
-            : 'border-negative/40 bg-negative/10 text-negative'
+            : nothingEnteredYet
+              ? 'border-line bg-surface-2 text-ink-dim'
+              : 'border-negative/40 bg-negative/10 text-negative'
         }`}
       >
         <span className="font-mono tracking-[0.04em] uppercase">
-          {settled ? 'Adds up' : 'Remaining'}
+          {settled ? 'Adds up to' : 'Remaining'}
         </span>
         <span className="tabular font-mono">
-          {settled ? formatPaise(0) : formatPaise(preview.remainingPaise)}
+          {/* The total when it adds up, so the label is a true statement and the figure
+              is the one worth checking: that the split equals the expense. */}
+          {settled
+            ? formatPaise(allocated)
+            : nothingEnteredYet
+              ? '—'
+              : formatPaise(preview.remainingPaise)}
         </span>
       </div>
 

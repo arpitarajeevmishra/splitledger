@@ -50,6 +50,10 @@ export function useBalances(groupId: string) {
   return useQuery<Balances>({
     queryKey: expenseKeys.balances(groupId),
     queryFn: () => balances.of(groupId),
+    // Refetched on focus, against the global default (D-98). A balance is the figure
+    // somebody came back to the tab to look at, and the one most likely to have moved
+    // while they were elsewhere -- somebody else adds an expense, or confirms a payment.
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -57,6 +61,10 @@ export function useSimplifiedPlan(groupId: string) {
   return useQuery<SimplifiedPlan>({
     queryKey: expenseKeys.simplified(groupId),
     queryFn: () => balances.simplified(groupId),
+    // Derived from the balances, so it goes stale exactly when they do -- and a stale
+    // plan is worse than a stale balance, because it invites a payment for a debt that
+    // is already gone.
+    refetchOnWindowFocus: true,
   })
 }
 
