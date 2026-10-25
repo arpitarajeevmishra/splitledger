@@ -132,6 +132,46 @@ class ArchitectureTest {
                         }
                     });
 
+    /**
+     * The sibling mistake, and the one that got through.
+     *
+     * <p>There is no {@code Clock} bean in this application, deliberately: services take
+     * {@code Clock.systemUTC()} and accept a fixed clock only through a package-private
+     * constructor for tests. A constructor that Spring will actually call and that asks for
+     * a {@code Clock} therefore fails the whole context -- and fails it where no unit test
+     * looks, because none of them load one. It cost a red CI run on SL-701.
+     *
+     * <p>The rule checks the constructor Spring will choose: the only one, or the
+     * {@code @Autowired} one where there are several. The second constructor is exactly
+     * where a {@code Clock} is supposed to be.
+     */
+    @ArchTest
+    static final ArchRule the_constructor_spring_uses_must_not_ask_for_a_clock =
+            ArchRuleDefinition.classes()
+                    .that(new DescribedPredicate<JavaClass>("are Spring-managed") {
+                        @Override
+                        public boolean test(JavaClass clazz) {
+                            return clazz.isAnnotatedWith(Component.class)
+                                    || clazz.isMetaAnnotatedWith(Component.class);
+                        }
+                    })
+                    .should(new ArchCondition<JavaClass>(
+                            "not take a Clock on the constructor Spring calls") {
+                        @Override
+                        public void check(JavaClass clazz, ConditionEvents events) {
+                            clazz.getConstructors().stream()
+                                    .filter(c -> clazz.getConstructors().size() == 1
+                                            || c.isAnnotatedWith(Autowired.class))
+                                    .filter(c -> c.getRawParameterTypes().stream()
+                                            .anyMatch(t -> t.getName().equals("java.time.Clock")))
+                                    .forEach(c -> events.add(SimpleConditionEvent.violated(clazz,
+                                            clazz.getName() + " asks Spring for a java.time.Clock"
+                                                    + ", and no such bean exists; take"
+                                                    + " Clock.systemUTC() here and keep the Clock"
+                                                    + " on a package-private constructor")));
+                        }
+                    });
+
     @ArchTest
     static final ArchRule no_field_injection = NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 

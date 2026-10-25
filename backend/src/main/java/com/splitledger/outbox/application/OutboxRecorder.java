@@ -4,6 +4,7 @@ import com.splitledger.outbox.domain.OutboxEvent;
 import com.splitledger.outbox.infra.OutboxEventRepository;
 import java.time.Clock;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,19 @@ public class OutboxRecorder {
     private final ObjectMapper json;
     private final Clock clock;
 
+    /**
+     * No {@code Clock} parameter, because this application has no {@code Clock} bean: every
+     * service here takes the system clock and accepts a fixed one only through a
+     * package-private constructor for tests. Asking Spring to inject one fails the context,
+     * and fails it nowhere a unit test would look, since none of them load a context. An
+     * ArchUnit rule now refuses it.
+     */
+    @Autowired
+    OutboxRecorder(OutboxEventRepository events, ObjectMapper json) {
+        this(events, json, Clock.systemUTC());
+    }
+
+    /** Visible for testing. */
     OutboxRecorder(OutboxEventRepository events, ObjectMapper json, Clock clock) {
         this.events = events;
         this.json = json;
