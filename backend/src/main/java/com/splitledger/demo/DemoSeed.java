@@ -1,5 +1,7 @@
 package com.splitledger.demo;
 
+import com.splitledger.balance.application.BalanceService;
+import com.splitledger.balance.domain.Transfer;
 import com.splitledger.common.payment.PaymentMethod;
 import com.splitledger.expense.application.ExpenseService;
 import com.splitledger.expense.domain.SplitType;
@@ -64,24 +66,28 @@ public class DemoSeed {
     private final GroupMemberRepository members;
     private final ExpenseService expenses;
     private final SettlementService settlements;
+    private final BalanceService balances;
     private final PasswordEncoder passwords;
     private final Clock clock;
 
     @Autowired
     DemoSeed(UserRepository users, GroupRepository groups, GroupMemberRepository members,
-            ExpenseService expenses, SettlementService settlements, PasswordEncoder passwords) {
-        this(users, groups, members, expenses, settlements, passwords, Clock.systemUTC());
+            ExpenseService expenses, SettlementService settlements, BalanceService balances,
+            PasswordEncoder passwords) {
+        this(users, groups, members, expenses, settlements, balances, passwords,
+                Clock.systemUTC());
     }
 
     /** Visible for testing. */
     DemoSeed(UserRepository users, GroupRepository groups, GroupMemberRepository members,
-            ExpenseService expenses, SettlementService settlements, PasswordEncoder passwords,
-            Clock clock) {
+            ExpenseService expenses, SettlementService settlements, BalanceService balances,
+            PasswordEncoder passwords, Clock clock) {
         this.users = users;
         this.groups = groups;
         this.members = members;
         this.expenses = expenses;
         this.settlements = settlements;
+        this.balances = balances;
         this.passwords = passwords;
         this.clock = clock;
     }
@@ -138,9 +144,16 @@ public class DemoSeed {
 
         // A settled debt as well as outstanding ones, so the activity feed and the payments
         // list both have something in them and the simplified plan has work left to do.
-        Settlement paid = settlements.create(group.id(), owner, second, 500_000L,
-                PaymentMethod.CASH);
-        settlements.confirm(paid.id(), second);
+        //
+        // Who pays whom is taken from the plan rather than written down here. The first
+        // attempt hardcoded owner -> second and was refused, because after those four
+        // expenses the owner is owed money rather than owing it -- which is not obvious
+        // from reading them and changes the moment any amount does. Asking the plan is
+        // self-correcting, and it exercises the simplification on the way past.
+        Transfer settle = balances.simplified(group.id(), owner).getFirst();
+        Settlement paid = settlements.create(group.id(), settle.from(), settle.to(),
+                settle.amount().paise(), PaymentMethod.CASH);
+        settlements.confirm(paid.id(), settle.to());
 
         log.info("Seeded the demo group {} with 3 members, 4 expenses and 1 settlement",
                 group.id());

@@ -70,6 +70,21 @@ class DemoSeedIT {
     }
 
     @Test
+    void leaves_the_group_part_settled_rather_than_square() {
+        DemoSeed.Seeded seeded = seed.seed("demo-password");
+
+        // Both halves matter for a demo. A fully settled group shows a confirmed payment
+        // and nothing to do; a group with no settlement shows debts and no evidence that
+        // paying works. This asserts the seed lands between the two -- and it is also what
+        // would have caught the first version, which tried to settle a debt that did not
+        // exist and failed outright.
+        assertThat(settlements.list(seeded.groupId(), seeded.owner())).isNotEmpty();
+        assertThat(balances.simplified(seeded.groupId(), seeded.owner()))
+                .as("the simplified plan should still have work to do")
+                .isNotEmpty();
+    }
+
+    @Test
     void the_seeded_ledger_balances() {
         DemoSeed.Seeded seeded = seed.seed("demo-password");
 
