@@ -172,6 +172,59 @@ class ArchitectureTest {
                         }
                     });
 
+    /**
+     * A conditional bean with an unconditional consumer is not a half-configured feature.
+     * It is an application that will not start.
+     *
+     * <p>Several beans here exist only when a property is set: the Razorpay provider, the
+     * Kafka publisher, the demo seed, the guest tour. Anything injecting one of those must
+     * carry the same condition, or on every deployment without that property Spring fails
+     * to build the consumer and the whole context dies -- taking every integration test
+     * with it, which is precisely how this was found on SL-904.
+     *
+     * <p>The rule does not try to prove the conditions <em>match</em>, only that the
+     * consumer has one. Comparing SpEL strings would be guesswork; requiring the author to
+     * have thought about it at all is most of the value.
+     */
+    @ArchTest
+    static final ArchRule consumers_of_conditional_beans_must_be_conditional_too =
+            ArchRuleDefinition.classes()
+                    .that(new DescribedPredicate<JavaClass>(
+                            "are Spring-managed and inject a conditional bean") {
+                        @Override
+                        public boolean test(JavaClass clazz) {
+                            return isManaged(clazz) && injectsAConditionalBean(clazz);
+                        }
+                    })
+                    .should(new ArchCondition<JavaClass>("be conditional themselves") {
+                        @Override
+                        public void check(JavaClass clazz, ConditionEvents events) {
+                            if (!isConditional(clazz)) {
+                                events.add(SimpleConditionEvent.violated(clazz,
+                                        clazz.getName() + " injects a bean that only exists"
+                                                + " under a condition, but has none itself;"
+                                                + " without the property set, the context"
+                                                + " fails to start"));
+                            }
+                        }
+                    });
+
+    private static boolean isManaged(JavaClass clazz) {
+        return clazz.isAnnotatedWith(Component.class) || clazz.isMetaAnnotatedWith(Component.class);
+    }
+
+    private static boolean isConditional(JavaClass clazz) {
+        return clazz.getAnnotations().stream()
+                .anyMatch(annotation -> annotation.getRawType().getSimpleName()
+                        .startsWith("ConditionalOn"));
+    }
+
+    private static boolean injectsAConditionalBean(JavaClass clazz) {
+        return clazz.getConstructors().stream()
+                .flatMap(constructor -> constructor.getRawParameterTypes().stream())
+                .anyMatch(ArchitectureTest::isConditional);
+    }
+
     @ArchTest
     static final ArchRule no_field_injection = NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 
