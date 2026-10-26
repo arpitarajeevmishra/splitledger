@@ -22,4 +22,13 @@ public interface UserDirectory {
 
     /** Must match the identity module's rule, or an invite would never find its user. */
     String normaliseEmail(String email);
+
+    /**
+     * Whether this account has proved it can read its own address (SL-901).
+     *
+     * <p>On the port rather than reached for directly, like every other question this
+     * module asks about a user: {@code group} does not depend on {@code identity}, and the
+     * one thing it needs to know here is a boolean.
+     */
+    boolean isEmailVerified(UUID userId);
 }

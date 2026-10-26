@@ -68,11 +68,19 @@ class InviteServiceTest {
     private static final class FakeDirectory implements UserDirectory {
         private final Map<String, UUID> byEmail = new HashMap<>();
         private final Map<UUID, String> byId = new HashMap<>();
+        private final java.util.Set<UUID> unverified = new java.util.HashSet<>();
 
         UUID add(String email) {
             UUID id = UUID.randomUUID();
             byEmail.put(normaliseEmail(email), id);
             byId.put(id, email);
+            return id;
+        }
+
+        /** Verified by default: these cases are about the email rules, not about SL-901. */
+        UUID addUnverified(String email) {
+            UUID id = add(email);
+            unverified.add(id);
             return id;
         }
 
@@ -89,6 +97,11 @@ class InviteServiceTest {
         @Override
         public String normaliseEmail(String email) {
             return email.trim().toLowerCase();
+        }
+
+        @Override
+        public boolean isEmailVerified(UUID userId) {
+            return byId.containsKey(userId) && !unverified.contains(userId);
         }
     }
 
@@ -227,6 +240,41 @@ class InviteServiceTest {
         assertThat(invite.status()).isEqualTo(InviteStatus.ACCEPTED);
         // MEMBER, never ADMIN: accepting an invitation must not confer administration.
         verify(memberships).joinOrRejoin(groupId, bobId, Role.MEMBER);
+    }
+
+    @Test
+    void anUnverifiedAccountCannotAcceptAnInvitationToItsOwnAddress() {
+        // The hole SL-901 closes, stated as the attack. Registering bob@example.com proves
+        // nothing about owning that mailbox, so matching the invitation's address -- which
+        // this account does, exactly -- is not evidence of anything. Without the
+        // verification check, whoever registers the address first reads the group's
+        // members, expenses and balances.
+        UUID impostorId = directory.addUnverified("bob@example.com");
+        GroupInvite invite = pendingInvite("bob@example.com", "tok");
+        tokenResolvesTo("tok", invite);
+
+        assertThatThrownBy(() -> service.accept("tok", impostorId))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED);
+
+        // And nothing happened: not joined, and the invitation is still there for whoever
+        // can actually read that mailbox.
+        verify(memberships, never()).joinOrRejoin(any(), any(), any());
+        assertThat(invite.status()).isEqualTo(InviteStatus.PENDING);
+    }
+
+    @Test
+    void anUnverifiedAccountCanStillDeclineAnInvitation() {
+        // Declining joins nothing and reveals nothing, and somebody who cannot verify
+        // should still be able to stop being offered the link.
+        UUID bobId = directory.addUnverified("bob@example.com");
+        GroupInvite invite = pendingInvite("bob@example.com", "tok");
+        tokenResolvesTo("tok", invite);
+
+        service.decline("tok", bobId);
+
+        assertThat(invite.status()).isEqualTo(InviteStatus.DECLINED);
     }
 
     @Test

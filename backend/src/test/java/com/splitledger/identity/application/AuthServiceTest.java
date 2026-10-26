@@ -43,11 +43,14 @@ class AuthServiceTest {
     @Mock
     private RefreshTokenService refreshTokens;
 
+    @Mock
+    private EmailVerificationService verification;
+
     private AuthService service(boolean registrationEnabled) {
         when(jwtService.issueAccessToken(any(), anyString())).thenReturn("an.access.token");
         when(jwtService.accessTtl()).thenReturn(Duration.ofMinutes(15));
         when(refreshTokens.issue(any())).thenReturn("a-refresh-token");
-        return new AuthService(users, passwordEncoder, jwtService, refreshTokens,
+        return new AuthService(users, passwordEncoder, jwtService, refreshTokens, verification,
                 registrationEnabled, Clock.fixed(T0, ZoneOffset.UTC));
     }
 

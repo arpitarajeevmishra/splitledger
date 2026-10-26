@@ -9,6 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.splitledger.TestcontainersConfiguration;
+import com.splitledger.identity.domain.User;
+import com.splitledger.identity.infra.UserRepository;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +42,9 @@ class InviteFlowIT {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private UserRepository users;
+
     private record Account(String token, UUID id, String email) {
     }
 
@@ -53,8 +59,40 @@ class InviteFlowIT {
                                 + "\",\"password\":\"password123\"}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
+        Account account = new Account(JsonPath.read(body, "$.accessToken"),
+                UUID.fromString(JsonPath.read(body, "$.user.id")), email);
+        verifyEmail(email);
+        return account;
+    }
+
+    /** Registers without verifying, which is what a real new signup looks like. */
+    private Account newUnverifiedUser(String label, String email) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\",\"name\":\"" + label
+                                + "\",\"password\":\"password123\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
         return new Account(JsonPath.read(body, "$.accessToken"),
                 UUID.fromString(JsonPath.read(body, "$.user.id")), email);
+    }
+
+    /**
+     * Marks the account verified, which accepting an invitation now requires (SL-901).
+     *
+     * <p>Set directly rather than redeemed through a link, deliberately. These tests are
+     * about invitations and about account caps; verification is a precondition they now
+     * have, not the thing they are checking, and routing every one of them through a
+     * mailer capture would bury what each is actually about. The real flow -- issue,
+     * redeem, single use, expiry -- is covered end to end by {@code EmailVerificationIT}.
+     *
+     * <p>Before SL-901 these tests passed because nothing checked. They failed the moment
+     * the check existed, which is the check working.
+     */
+    private void verifyEmail(String email) {
+        User user = users.findByEmail(User.normaliseEmail(email)).orElseThrow();
+        user.verifyEmail(Instant.now());
+        users.save(user);
     }
 
     private String newGroup(Account owner, String name) throws Exception {
@@ -78,6 +116,32 @@ class InviteFlowIT {
 
     private static String tokenOf(String url) {
         return url.substring(url.lastIndexOf('/') + 1);
+    }
+
+    @Test
+    void registeringTheInvitedAddressIsNotEnoughToAcceptTheInvitation() throws Exception {
+        // The hole SL-901 closes, at the HTTP boundary. Bob's invitation is addressed to
+        // an email; anybody can register that email; owning the account is not owning the
+        // mailbox. Before this check, whoever registered the address first joined the
+        // group and read its members, expenses and balances.
+        Account alice = newUser("Alice");
+        String groupId = newGroup(alice, "Flat 402");
+        String bobEmail = "bob-" + System.nanoTime() + "@example.com";
+        String token = tokenOf(invite(alice, groupId, bobEmail));
+
+        Account impostor = newUnverifiedUser("Impostor", bobEmail);
+        mockMvc.perform(post("/api/v1/invites/" + token + "/accept")
+                        .header("Authorization", "Bearer " + impostor.token()))
+                .andExpect(status().isForbidden());
+
+        // And the group is untouched: still just Alice, and the invitation still open for
+        // whoever can actually read that mailbox.
+        mockMvc.perform(get("/api/v1/groups/" + groupId)
+                        .header("Authorization", "Bearer " + alice.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members.length()").value(1));
+        mockMvc.perform(get("/api/v1/invites/" + token))
+                .andExpect(status().isOk());
     }
 
     @Test

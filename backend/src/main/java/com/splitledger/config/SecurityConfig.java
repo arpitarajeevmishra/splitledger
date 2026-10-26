@@ -66,6 +66,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/invites/*").permitAll()
                         // The sign-up page must know whether registration is open
                         // before anyone has an account to ask with.
+                        // The link is opened in whatever browser the email was read in,
+                        // which is usually not the one holding a session. The token is the
+                        // authentication here (SL-901).
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/verify-email")
+                        .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/config").permitAll()
                         .requestMatchers("/api/v1/health-check").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()

@@ -102,6 +102,20 @@ app:
     # own claim immediately.
     claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
     purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
+  verification:
+    # How long a verification link is good for (SL-901). A day: long enough for somebody
+    # who registers at midnight and reads their mail at breakfast, short enough that a link
+    # left sitting in an inbox stops mattering quickly.
+    ttl: ${VERIFICATION_TTL:PT24H}
+    # Counted per account against the database, not in an in-process bucket: the thing
+    # being protected is somebody else's inbox, and an in-process counter resets on every
+    # deploy and does not exist on a second instance. Three, because a person who has not
+    # received one of three links has a delivery problem a fourth will not solve.
+    resends-per-hour: ${VERIFICATION_RESENDS_PER_HOUR:3}
+    # Logs the raw token. For local development only, where there is no mailbox to read.
+    # A verification link in a log file is a credential in a log file -- logs are shipped,
+    # aggregated, retained and read by more people than the mailbox was.
+    log-links: ${VERIFICATION_LOG_LINKS:false}
   demo:
     # Seeds a demo group at start-up when set, and does nothing when blank (SL-705). The
     # password is the switch: a separate boolean could disagree with it, and "enabled with
