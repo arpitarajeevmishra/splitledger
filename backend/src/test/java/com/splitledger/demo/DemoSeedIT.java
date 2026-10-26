@@ -55,7 +55,11 @@ class DemoSeedIT {
     void builds_a_group_with_a_history() {
         DemoSeed.Seeded seeded = seed.seed("demo-password");
 
-        assertThat(seeded.created()).isTrue();
+        // Deliberately not asserting that this call was the one that created the data.
+        // Every test here shares one Postgres, so whichever runs first seeds and the rest
+        // find it already there -- and JUnit does not promise an order. An assertion that
+        // only one test in the class can satisfy is a flake, not a check. What every test
+        // can assert, and what actually matters, is that the data is right afterwards.
         assertThat(expenses.list(seeded.groupId(), seeded.owner())).hasSize(4);
         // One of each, because the thing worth demonstrating is that the allocation does
         // real work -- a demo built entirely from equal splits shows none of it.
@@ -104,6 +108,8 @@ class DemoSeedIT {
         DemoSeed.Seeded first = seed.seed("demo-password");
         long usersAfterFirst = users.count();
 
+        // The second call is the one with something to prove, and it proves it whether or
+        // not the first was the call that created anything.
         DemoSeed.Seeded again = seed.seed("demo-password");
 
         // Idempotence matters more than it sounds: this is the one piece of code whose
