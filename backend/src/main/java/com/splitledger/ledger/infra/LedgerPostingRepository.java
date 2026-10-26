@@ -27,4 +27,23 @@ public interface LedgerPostingRepository extends JpaRepository<LedgerPosting, Lo
     @Query(value = "select coalesce(sum(amount_paise), 0) from ledger_postings",
             nativeQuery = true)
     long reconciliationDrift();
+
+    /**
+     * Transactions whose own postings do not sum to zero.
+     *
+     * <p>Strictly stronger than the global sum behind {@code ledger_reconciliation_drift}.
+     * That gauge adds up every posting in the system, so two equal and opposite errors --
+     * one transaction short by 500 paise, another over by 500 -- cancel out and it reads a
+     * contented zero while two groups' balances are both wrong. This asks the question per
+     * transaction, where the invariant actually lives (ADR-003).
+     *
+     * <p>Returns the offending transaction ids with their sums, because "the ledger is
+     * broken" is not something anybody can act on and "txn 7f3a… is 500 paise short" is.
+     *
+     * @return rows of (txn_id, sum), empty when the ledger is sound
+     */
+    @Query(value = "select txn_id, sum(amount_paise) from ledger_postings "
+            + "group by txn_id having sum(amount_paise) <> 0",
+            nativeQuery = true)
+    List<Object[]> unbalancedTransactions();
 }
