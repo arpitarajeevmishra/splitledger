@@ -288,11 +288,22 @@ routes `/api/*` and `/webhooks/*` to the API and everything else to the static s
 looks like success and is not. Checked, because a `200` from `curl` was exactly convincing
 enough to get this wrong in the first draft of this file.
 
-So a scraper has to reach it from inside the compose network, as `http://api:8080/actuator/prometheus`.
-Running Prometheus as another service in `docker-compose.prod.yml` is the straightforward
-way and needs no new routing. Exposing it through Caddy instead would publish operational
-detail — every endpoint's latency, the state of the outbox, the size of the ledger — to
-anybody who asks, so it would need authentication in front of it first.
+**And it answers `401` from inside the network too.** `SecurityConfig` permits
+`/actuator/health**` and nothing else under `/actuator`, so `prometheus` falls through to
+`anyRequest().authenticated()`. A Prometheus running as another service in
+`docker-compose.prod.yml` would get `401` on every scrape.
+
+So **nothing can read these metrics today**, and the rules and dashboard beside this file
+are inert until that is decided one way or the other:
+
+- permit `/actuator/prometheus` unauthenticated, which is safe only for as long as Caddy
+  keeps routing `/actuator` to the static site — the protection would live in the reverse
+  proxy's config rather than in the application's, which is worth saying out loud; or
+- give the scraper a credential, which means a credential to create, store and rotate.
+
+Either belongs with SL-907, where a Prometheus is actually stood up. This was found by
+deploying and looking, not by any test: the metrics register correctly, the endpoint is
+configured correctly, and the two have never been connected.
 
 Then load `alerts.yml` as a rule file and import `dashboard.json` into Grafana.
 

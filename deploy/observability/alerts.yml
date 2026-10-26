@@ -5,10 +5,15 @@
 # time as the metric is a rule that matches what the metric actually means -- and one
 # written months later, by someone reading a dashboard, is a guess.
 #
-# Point a Prometheus at http://api:8080/actuator/prometheus from inside the compose network
-# and load this file. Not the public URL: Caddy routes everything that is not /api or
-# /webhooks to the static site, so https://<domain>/actuator/prometheus answers 200 with the
-# SPA's index.html. See deploy/README.md.
+# NOTHING CAN SCRAPE THESE YET, for two separate reasons, and both are worth knowing before
+# anyone assumes this file is doing something:
+#
+#   1. https://<domain>/actuator/prometheus answers 200 with the SPA's index.html. Caddy
+#      routes everything that is not /api or /webhooks to the static site.
+#   2. http://api:8080/actuator/prometheus answers 401. SecurityConfig permits
+#      /actuator/health** and nothing else under /actuator.
+#
+# See deploy/README.md. Resolving it belongs with SL-907, where a Prometheus is stood up.
 groups:
   - name: splitledger-correctness
     rules:
