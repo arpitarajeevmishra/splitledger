@@ -37,6 +37,7 @@ export function renderWithProviders(
     login: async () => {},
     register: async () => {},
     logout: async () => {},
+    exploreDemo: async () => {},
     ...options.auth,
   }
 

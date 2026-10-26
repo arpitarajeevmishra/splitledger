@@ -71,6 +71,9 @@ public class SecurityConfig {
                         // authentication here (SL-901).
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/verify-email")
                         .permitAll()
+                        // No signup and no credential: the whole point is that a
+                        // visitor gets in without having an account (SL-904).
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/demo").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/config").permitAll()
                         .requestMatchers("/api/v1/health-check").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()

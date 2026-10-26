@@ -57,6 +57,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const session = await auth.login(email, password)
         adopt(session.accessToken, session.user)
       },
+      exploreDemo: async () => {
+        const session = await auth.exploreDemo()
+        adopt(session.accessToken, session.user)
+      },
       register: async (email, name, password) => {
         const session = await auth.register(email, name, password)
         adopt(session.accessToken, session.user)

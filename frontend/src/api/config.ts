@@ -7,6 +7,13 @@ export type AppConfig = {
   upiIntentEnabled: boolean
   demoMode: boolean
   /**
+   * Whether this deployment has demo data to show a visitor without signing up.
+   *
+   * True exactly when the server has a demo seed configured, so the button cannot be
+   * offered by a deployment that would 404 on it (SL-904).
+   */
+  guestTourEnabled: boolean
+  /**
    * The public half of Razorpay's key pair, or null when this deployment has no keys.
    *
    * One field rather than a key plus a separate "enabled" flag: two values can disagree,
@@ -48,6 +55,7 @@ export function useAppConfig(): AppConfig {
       registrationEnabled: false,
       upiIntentEnabled: false,
       demoMode: true,
+      guestTourEnabled: false,
       razorpayKeyId: null,
     }
   )

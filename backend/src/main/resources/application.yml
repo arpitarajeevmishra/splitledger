@@ -198,6 +198,12 @@ app:
       invite-lookup:
         capacity: 30
         per: PT1M
+      # The guest tour (SL-904). No credential to get wrong, so this is not about guessing
+      # -- each call mints a refresh token, and an unauthenticated endpoint that writes a
+      # row per request deserves a cap whatever it is for.
+      demo-tour:
+        capacity: 10
+        per: PT1M
   # Off until email verification ships (SL-901). Lets the app go live in S6 unexposed.
   # Read at startup, so flipping it needs the container restarted -- not a release, not a
   # rebuild, and recoverable in seconds if a demo turns into an incident.

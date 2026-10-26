@@ -23,14 +23,21 @@ public class AppConfigController {
 
     private final boolean registrationEnabled;
     private final boolean upiIntentEnabled;
+    private final boolean guestTourEnabled;
     private final String razorpayKeyId;
 
     AppConfigController(
             @Value("${app.registration-enabled}") boolean registrationEnabled,
             @Value("${app.payments.upi-intent-enabled}") boolean upiIntentEnabled,
+            @Value("${app.demo.seed-password:}") String demoSeedPassword,
             @Value("${app.payments.razorpay.key-id:}") String razorpayKeyId) {
         this.registrationEnabled = registrationEnabled;
         this.upiIntentEnabled = upiIntentEnabled;
+        // Derived from the same setting that creates the endpoint, rather than being a
+        // flag of its own. Two settings could disagree, and the disagreement would either
+        // offer a button that 404s or hide a tour that works -- the same reasoning as the
+        // Razorpay key below.
+        this.guestTourEnabled = demoSeedPassword != null && !demoSeedPassword.isBlank();
         // Blank becomes null, so "no key" is one value rather than two the client has to
         // test for separately.
         this.razorpayKeyId = razorpayKeyId == null || razorpayKeyId.isBlank()
@@ -42,6 +49,9 @@ public class AppConfigController {
      * @param demoMode always true in this product, and sent rather than assumed so the
      *     banner has a flag to read instead of being unconditional markup someone could
      *     delete without noticing (ADR-013)
+     * @param guestTourEnabled whether this deployment has demo data to show a visitor,
+     *     which is true exactly when the seed password is set -- so the button cannot be
+     *     offered by a deployment that would 404 on it
      * @param razorpayKeyId the public half of the key pair, which Checkout needs in the
      *     browser to open an order, or null when this deployment has no keys. One field
      *     rather than a key plus an "enabled" flag: two values can disagree, and the
@@ -52,11 +62,13 @@ public class AppConfigController {
             boolean registrationEnabled,
             boolean upiIntentEnabled,
             boolean demoMode,
+            boolean guestTourEnabled,
             String razorpayKeyId) {
     }
 
     @GetMapping
     public AppConfig config() {
-        return new AppConfig(registrationEnabled, upiIntentEnabled, true, razorpayKeyId);
+        return new AppConfig(registrationEnabled, upiIntentEnabled, true, guestTourEnabled,
+                razorpayKeyId);
     }
 }

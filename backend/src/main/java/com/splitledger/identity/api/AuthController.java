@@ -30,21 +30,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    static final String REFRESH_COOKIE = "refresh_token";
-    private static final String REFRESH_PATH = "/api/v1/auth";
+    static final String REFRESH_COOKIE = SessionResponses.REFRESH_COOKIE;
 
     private final AuthService authService;
     private final RateLimiter rateLimiter;
-    private final Duration refreshTtl;
-    private final boolean cookieSecure;
+    private final SessionResponses sessions;
 
     AuthController(AuthService authService, RateLimiter rateLimiter,
-            @Value("${app.auth.refresh-ttl}") Duration refreshTtl,
-            @Value("${app.auth.cookie-secure}") boolean cookieSecure) {
+            SessionResponses sessions) {
         this.authService = authService;
         this.rateLimiter = rateLimiter;
-        this.refreshTtl = refreshTtl;
-        this.cookieSecure = cookieSecure;
+        this.sessions = sessions;
     }
 
     @PostMapping("/register")
@@ -96,31 +92,14 @@ public class AuthController {
     }
 
     private ResponseEntity<AuthResponse> respond(AuthService.Session session, HttpStatus status) {
-        return ResponseEntity.status(status)
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refreshToken()).toString())
-                .body(new AuthResponse(session.accessToken(), session.expiresInSeconds(),
-                        SelfProfileResponse.from(session.user())));
+        return sessions.respond(session, status);
     }
 
     private ResponseCookie refreshCookie(String rawToken) {
-        return ResponseCookie.from(REFRESH_COOKIE, rawToken)
-                .httpOnly(true)
-                .secure(cookieSecure)
-                .sameSite("Strict")
-                // Scoped to the auth endpoints, so the token is not attached to every
-                // request and its exposure stays as narrow as the design allows.
-                .path(REFRESH_PATH)
-                .maxAge(refreshTtl)
-                .build();
+        return sessions.refreshCookie(rawToken);
     }
 
     private ResponseCookie expiredCookie() {
-        return ResponseCookie.from(REFRESH_COOKIE, "")
-                .httpOnly(true)
-                .secure(cookieSecure)
-                .sameSite("Strict")
-                .path(REFRESH_PATH)
-                .maxAge(Duration.ZERO)
-                .build();
+        return sessions.expiredCookie();
     }
 }
