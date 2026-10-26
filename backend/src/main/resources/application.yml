@@ -102,6 +102,20 @@ app:
     # own claim immediately.
     claim-timeout: ${IDEMPOTENCY_CLAIM_TIMEOUT:PT10M}
     purge-cron: ${IDEMPOTENCY_PURGE_CRON:0 */15 * * * *}
+  demo:
+    # Seeds a demo group at start-up when set, and does nothing when blank (SL-705). The
+    # password is the switch: a separate boolean could disagree with it, and "enabled with
+    # no password" and "password with the flag off" are both avoidable confusions.
+    #
+    # Idempotent -- it looks for demo@splitledger.invalid and stops if it is there -- so
+    # leaving this set is safe, and .invalid is reserved by RFC 2606, so the demo accounts
+    # can never collide with a real signup.
+    seed-password: ${DEMO_SEED_PASSWORD:}
+  ledger:
+    # Nightly, at 03:00 (SL-705). A GROUP BY over every posting ever written, asking the
+    # question the per-minute drift gauge cannot: does each transaction balance on its own.
+    # Two equal and opposite errors cancel in a global sum and do not cancel here.
+    reconciliation-cron: ${LEDGER_RECONCILIATION_CRON:0 0 3 * * *}
   metrics:
     # How often the scheduled gauges re-read the database (SL-704). Read on a schedule and
     # held, never queried inside a scrape: a gauge callback runs on whichever thread is
