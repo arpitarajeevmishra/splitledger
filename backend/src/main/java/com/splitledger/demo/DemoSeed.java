@@ -153,6 +153,12 @@ public class DemoSeed {
         Transfer settle = balances.simplified(group.id(), owner).getFirst();
         Settlement paid = settlements.create(group.id(), settle.from(), settle.to(),
                 settle.amount().paise(), PaymentMethod.CASH);
+        // All three steps, because that is the flow: create leaves it INITIATED, the payer
+        // says they have handed over the cash, and only then can the payee confirm it
+        // arrived. Skipping the middle one was the second thing CI refused here -- and
+        // skipping it would also have produced a settlement history no real group could
+        // have, which is the whole thing this seed is supposed not to do.
+        settlements.markPaid(paid.id(), settle.from());
         settlements.confirm(paid.id(), settle.to());
 
         log.info("Seeded the demo group {} with 3 members, 4 expenses and 1 settlement",
