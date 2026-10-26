@@ -9,6 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.splitledger.TestcontainersConfiguration;
 import java.util.List;
+import com.splitledger.identity.domain.User;
+import com.splitledger.identity.infra.UserRepository;
+import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +52,9 @@ class AccountLimitsIT {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private UserRepository users;
 
     private record Account(String token, UUID id, String email) {
     }
@@ -190,8 +196,28 @@ class AccountLimitsIT {
                                 + "\",\"password\":\"password123\"}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return new Account(JsonPath.read(body, "$.accessToken"),
+        Account account = new Account(JsonPath.read(body, "$.accessToken"),
                 UUID.fromString(JsonPath.read(body, "$.user.id")), email);
+        verifyEmail(email);
+        return account;
+    }
+
+    /**
+     * Marks the account verified, which accepting an invitation now requires (SL-901).
+     *
+     * <p>Set directly rather than redeemed through a link, deliberately. These tests are
+     * about invitations and about account caps; verification is a precondition they now
+     * have, not the thing they are checking, and routing every one of them through a
+     * mailer capture would bury what each is actually about. The real flow -- issue,
+     * redeem, single use, expiry -- is covered end to end by {@code EmailVerificationIT}.
+     *
+     * <p>Before SL-901 these tests passed because nothing checked. They failed the moment
+     * the check existed, which is the check working.
+     */
+    private void verifyEmail(String email) {
+        User user = users.findByEmail(User.normaliseEmail(email)).orElseThrow();
+        user.verifyEmail(Instant.now());
+        users.save(user);
     }
 
     private UUID newGroup(Account owner, String name) throws Exception {
