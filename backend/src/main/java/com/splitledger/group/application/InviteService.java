@@ -175,6 +175,17 @@ public class InviteService {
     public UUID accept(String rawToken, UUID userId) {
         GroupInvite invite = usable(rawToken);
         requireAddressedTo(invite, userId);
+        // The check that makes requireAddressedTo mean anything (SL-901). Matching the
+        // caller's email against the invitation proves nothing on its own: anybody can
+        // register an address they do not own. Without this, an invitation addressed to
+        // one person is accepted by whoever registered that address first, and they read
+        // the group's members, expenses and balances.
+        //
+        // On accept rather than at registration, deliberately. An unverified account is
+        // harmless on its own -- its own groups, its own expenses, nobody else's data --
+        // and blocking registration until a mailbox has been read would mean nobody can
+        // try the product at all while SL-902 is outstanding.
+        requireVerified(userId);
 
         Instant now = Instant.now(clock);
         invite.accept(now);
@@ -193,6 +204,19 @@ public class InviteService {
         requireAddressedTo(invite, userId);
         invite.decline(Instant.now(clock));
         invites.save(invite);
+    }
+
+    /**
+     * Declining is not gated.
+     *
+     * <p>Refusing an invitation reveals nothing and joins nothing, and somebody who cannot
+     * verify should still be able to make the link stop being offered to them.
+     */
+    private void requireVerified(UUID userId) {
+        if (!users.isEmailVerified(userId)) {
+            throw new ApiException(ErrorCode.EMAIL_NOT_VERIFIED,
+                    "Verify your email address before joining a group");
+        }
     }
 
     private void requireAddressedTo(GroupInvite invite, UUID userId) {

@@ -21,24 +21,27 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokens;
+    private final EmailVerificationService verification;
     private final boolean registrationEnabled;
     private final Clock clock;
 
     @Autowired
     AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
-            RefreshTokenService refreshTokens,
+            RefreshTokenService refreshTokens, EmailVerificationService verification,
             @Value("${app.registration-enabled}") boolean registrationEnabled) {
-        this(users, passwordEncoder, jwtService, refreshTokens, registrationEnabled,
-                Clock.systemUTC());
+        this(users, passwordEncoder, jwtService, refreshTokens, verification,
+                registrationEnabled, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
-            RefreshTokenService refreshTokens, boolean registrationEnabled, Clock clock) {
+            RefreshTokenService refreshTokens, EmailVerificationService verification,
+            boolean registrationEnabled, Clock clock) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokens = refreshTokens;
+        this.verification = verification;
         this.registrationEnabled = registrationEnabled;
         this.clock = clock;
     }
@@ -46,8 +49,8 @@ public class AuthService {
     @Transactional
     public Session register(String email, String name, String rawPassword) {
         if (!registrationEnabled) {
-            // The app can be deployed before email verification ships without exposing
-            // the signup hole that verification closes (ADR-013, SL-901).
+            // Kept as a switch even now that verification exists: closing signups is still
+            // the fastest answer to abuse, and it is one restart rather than a release.
             throw new ApiException(ErrorCode.REGISTRATION_DISABLED,
                     "Registration is not open yet");
         }
@@ -58,6 +61,11 @@ public class AuthService {
         }
         User user = users.save(User.register(normalised, name.trim(),
                 passwordEncoder.encode(rawPassword), Instant.now(clock)));
+        // In the same transaction as the account. A registration that committed without
+        // its verification token would leave somebody with an account they can never
+        // verify and no way to ask for another, since resend needs the account to exist
+        // and this is the only place the first one is issued.
+        verification.issue(user.id(), normalised);
         return startSession(user);
     }
 

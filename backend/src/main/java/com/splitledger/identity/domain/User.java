@@ -36,6 +36,10 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Null until the address has been proven; the only thing that makes it mean anything. */
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
     protected User() {
         // for JPA
     }
@@ -74,6 +78,29 @@ public class User {
 
     public String upiId() {
         return upiId;
+    }
+
+    /**
+     * Verifying twice is not an error and not a second write.
+     *
+     * <p>A verification link can be opened twice -- a mail client prefetching it, somebody
+     * clicking back, a retry. Refusing the second would turn a harmless repeat into an
+     * error page, and overwriting the timestamp would move a fact that already happened.
+     * The token's own single-use check is what stops it being <em>reused</em>; this is
+     * about the state it sets.
+     */
+    public void verifyEmail(Instant at) {
+        if (emailVerifiedAt == null) {
+            emailVerifiedAt = at;
+        }
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerifiedAt != null;
+    }
+
+    public Instant emailVerifiedAt() {
+        return emailVerifiedAt;
     }
 
     public Instant createdAt() {

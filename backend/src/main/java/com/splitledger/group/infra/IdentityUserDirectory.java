@@ -37,4 +37,12 @@ class IdentityUserDirectory implements UserDirectory {
     public String normaliseEmail(String email) {
         return User.normaliseEmail(email);
     }
+
+    @Override
+    public boolean isEmailVerified(UUID userId) {
+        // An account that does not exist is not verified. The caller is about to refuse
+        // either way, and answering true here would make a missing user the one case that
+        // walks past the check.
+        return users.findById(userId).map(User::isEmailVerified).orElse(false);
+    }
 }
