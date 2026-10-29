@@ -30,7 +30,7 @@
 		<java.version>27</java.version>
 		<!-- Not managed by spring-boot-starter-parent 4.1.1, so pinned here.
 		     springdoc 3.x is the line that targets Spring Boot 4 / Framework 7. -->
-		<springdoc.version>3.1.1</springdoc.version>
+		<springdoc.version>3.2.0</springdoc.version>
 		<archunit.version>1.5.1</archunit.version>
 		<!-- Property-based tests for the split allocation; the one place in this project
 		     where examples are not enough (SPRINT_PLAN S3, LLD 4.4). -->
