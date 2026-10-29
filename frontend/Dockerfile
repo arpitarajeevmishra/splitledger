@@ -15,7 +15,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.29-alpine AS runtime
+FROM nginx:1.30-alpine AS runtime
 
 # The SPA talks to /api/v1 on its own origin (finding C13): one image runs in every
 # environment, and the refresh cookie's SameSite=Strict only works because the app and the
