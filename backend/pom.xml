@@ -34,7 +34,7 @@
 		<archunit.version>1.5.1</archunit.version>
 		<!-- Property-based tests for the split allocation; the one place in this project
 		     where examples are not enough (SPRINT_PLAN S3, LLD 4.4). -->
-		<jqwik.version>1.9.3</jqwik.version>
+		<jqwik.version>1.10.2</jqwik.version>
 		<jjwt.version>0.13.0</jjwt.version>
 		<!-- bucket4j-core stopped at 8.10.1; the maintained line is bucket4j_jdk17-core. -->
 		<bucket4j.version>8.21.0</bucket4j.version>
