@@ -4,7 +4,7 @@
 # Built on the runner's own architecture: `npm run build` emits static files that are the
 # same bytes everywhere, so there is nothing for an emulated arm64 build stage to do but
 # take longer. The nginx runtime stage below is what varies per architecture.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+FROM --platform=$BUILDPLATFORM node:25-alpine AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
