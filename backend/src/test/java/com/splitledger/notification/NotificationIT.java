@@ -38,7 +38,13 @@ import org.springframework.context.annotation.Import;
         "app.jwt.secret=a-notification-test-secret-long-enough-for-hs256",
         // Publishing is driven explicitly; a background poll draining the table mid-test
         // would make every assertion below a race.
-        "app.outbox.poll-delay-ms=3600000"
+        // A cron that never fires this century, so publishing is driven only
+        // by the explicit calls below.
+        "app.outbox.poll-cron=0 0 5 31 2 ?",
+        // And no nudge, for the same reason: publishing has to happen
+        // only where these tests ask for it, or "still unpublished" is
+        // a race against a thread that commits faster than the assert.
+        "app.outbox.nudge-enabled=false"
 })
 class NotificationIT {
 

@@ -27,6 +27,7 @@ public class OutboxRecorder {
 
     private final OutboxEventRepository events;
     private final ObjectMapper json;
+    private final OutboxNudge nudge;
     private final Clock clock;
 
     /**
@@ -37,14 +38,16 @@ public class OutboxRecorder {
      * ArchUnit rule now refuses it.
      */
     @Autowired
-    OutboxRecorder(OutboxEventRepository events, ObjectMapper json) {
-        this(events, json, Clock.systemUTC());
+    OutboxRecorder(OutboxEventRepository events, ObjectMapper json, OutboxNudge nudge) {
+        this(events, json, nudge, Clock.systemUTC());
     }
 
     /** Visible for testing. */
-    OutboxRecorder(OutboxEventRepository events, ObjectMapper json, Clock clock) {
+    OutboxRecorder(OutboxEventRepository events, ObjectMapper json, OutboxNudge nudge,
+            Clock clock) {
         this.events = events;
         this.json = json;
+        this.nudge = nudge;
         this.clock = clock;
     }
 
@@ -60,5 +63,9 @@ public class OutboxRecorder {
             Object payload) {
         events.save(OutboxEvent.of(aggregateType, aggregateId, groupId, eventType,
                 json.writeValueAsString(payload), clock.instant()));
+        // Asks for a publish once this transaction commits, so the poll does not have to
+        // be frequent. Registered rather than performed: publishing before the commit
+        // would announce something that may still roll back.
+        nudge.afterCommit();
     }
 }

@@ -50,7 +50,7 @@ public class OutboxMetrics {
         registry.gauge("splitledger.outbox.dead.lettered", deadLettered, AtomicLong::doubleValue);
     }
 
-    @Scheduled(fixedDelayString = "${app.metrics.refresh-ms}")
+    @Scheduled(cron = "${app.metrics.refresh-cron}")
     @Transactional(readOnly = true)
     public void refresh() {
         Instant oldest = events.oldestUnpublished();
