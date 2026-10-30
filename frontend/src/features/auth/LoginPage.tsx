@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAppConfig } from '../../api/config'
 import { messageFor } from '../../api/problem'
 import { Button } from '../../components/ui/Button'
 import { Field } from '../../components/ui/Field'
@@ -11,8 +12,10 @@ import { loginSchema, type LoginValues } from './schemas'
 import { AuthLayout } from './AuthLayout'
 
 export function LoginPage() {
-  const { login } = useAuth()
+  const { login, exploreDemo } = useAuth()
+  const { guestTourEnabled } = useAppConfig()
   const navigate = useNavigate()
+  const [exploring, setExploring] = useState(false)
   // Following an invite link lands here; signing in has to go back to it.
   const redirectTo = useAfterAuthRedirect()
   const [formError, setFormError] = useState<string | null>(null)
@@ -31,6 +34,22 @@ export function LoginPage() {
       // Deliberately the same message for an unknown email and a wrong password: telling
       // them apart would let anyone enumerate which addresses have accounts.
       setFormError(messageFor(error))
+    }
+  }
+
+  async function onExplore() {
+    setFormError(null)
+    setExploring(true)
+    try {
+      await exploreDemo()
+      // Straight to the groups list rather than to redirectTo: somebody who followed an
+      // invite link and then chose to explore instead is not accepting that invitation,
+      // and dropping them on it as a different account would be baffling.
+      navigate('/', { replace: true })
+    } catch (error) {
+      setFormError(messageFor(error, 'The demo is not available just now.'))
+    } finally {
+      setExploring(false)
     }
   }
 
@@ -64,14 +83,36 @@ export function LoginPage() {
           {...register('password')}
         />
         {formError !== null && (
-          <p role="alert" className="rounded border border-negative/40 bg-negative/10 px-3 py-2 text-xs text-negative">
+          <p
+            role="alert"
+            className="rounded border border-negative/40 bg-negative/10 px-3 py-2 text-xs text-negative"
+          >
             {formError}
           </p>
         )}
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting || exploring}>
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
+
+      {/* Offered only where the server has demo data, so the button cannot 404. Below the
+          form and visually quieter: somebody who came here to sign in should not have to
+          read past an invitation to do something else. */}
+      {guestTourEnabled && (
+        <div className="mt-6 border-t border-line pt-5 text-center">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isSubmitting || exploring}
+            onClick={() => void onExplore()}
+          >
+            {exploring ? 'Opening the demo…' : 'Explore the demo'}
+          </Button>
+          <p className="mt-2 text-xs text-ink-dim">
+            No signup. You will be signed in to a shared example group.
+          </p>
+        </div>
+      )}
     </AuthLayout>
   )
 }
