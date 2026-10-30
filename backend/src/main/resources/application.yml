@@ -173,6 +173,15 @@ app:
     base-url: ${INVITE_BASE_URL:http://localhost:5173}
   auth:
     refresh-ttl: P7D
+    # How long after a token is rotated a replay of it is read as a race rather than a
+    # leak (O-9). Two browser tabs are separate JavaScript contexts sharing one cookie, so
+    # nothing on the client can stop them refreshing at the same instant, and treating the
+    # loser as theft logged out a user who did nothing wrong.
+    #
+    # Seconds, not minutes: it only has to cover the gap between two requests the browser
+    # fired together. A replay inside it earns an access token and never a refresh token,
+    # so the window cannot be turned into a foothold.
+    refresh-grace: ${REFRESH_GRACE:PT30S}
     # Off locally so the cookie works over plain HTTP; forced on in prod below.
     cookie-secure: ${COOKIE_SECURE:false}
   rate-limit:

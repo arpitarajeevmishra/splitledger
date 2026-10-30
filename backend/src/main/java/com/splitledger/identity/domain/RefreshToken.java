@@ -85,6 +85,11 @@ public class RefreshToken {
         return expiresAt;
     }
 
+    /** When this token was rotated away or revoked; null while it is live. */
+    public Instant revokedAt() {
+        return revokedAt;
+    }
+
     public UUID replacedBy() {
         return replacedBy;
     }

@@ -34,11 +34,22 @@ public class SessionResponses {
         this.cookieSecure = cookieSecure;
     }
 
+    /**
+     * A null refresh token means "keep the cookie you have", and the response must then
+     * carry no {@code Set-Cookie} at all.
+     *
+     * <p>That case is the losing half of two tabs refreshing at once (O-9). The browser
+     * already holds the live token its other tab was given; overwriting that cookie with
+     * anything -- including a blank -- would take the session away from the tab that won.
+     */
     public ResponseEntity<AuthResponse> respond(AuthService.Session session, HttpStatus status) {
-        return ResponseEntity.status(status)
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refreshToken()).toString())
-                .body(new AuthResponse(session.accessToken(), session.expiresInSeconds(),
-                        SelfProfileResponse.from(session.user())));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
+        if (session.refreshToken() != null) {
+            response.header(HttpHeaders.SET_COOKIE,
+                    refreshCookie(session.refreshToken()).toString());
+        }
+        return response.body(new AuthResponse(session.accessToken(), session.expiresInSeconds(),
+                SelfProfileResponse.from(session.user())));
     }
 
     public ResponseCookie refreshCookie(String rawToken) {

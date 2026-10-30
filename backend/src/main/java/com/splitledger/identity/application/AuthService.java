@@ -115,6 +115,10 @@ public class AuthService {
                 jwtService.accessTtl().toSeconds(), refreshTokens.issue(user.id()), user);
     }
 
+    /**
+     * @param refreshToken null when the caller should keep the cookie it already has,
+     *     which happens only on a concurrent refresh (O-9)
+     */
     public record Session(String accessToken, long expiresInSeconds, String refreshToken,
             User user) {
     }

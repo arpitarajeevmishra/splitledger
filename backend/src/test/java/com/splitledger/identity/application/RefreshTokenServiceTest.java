@@ -31,6 +31,7 @@ class RefreshTokenServiceTest {
 
     private static final Instant T0 = Instant.parse("2026-01-01T10:00:00Z");
     private static final Duration TTL = Duration.ofDays(7);
+    private static final Duration GRACE = Duration.ofSeconds(30);
 
     @Mock
     private RefreshTokenRepository repository;
@@ -42,7 +43,9 @@ class RefreshTokenServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RefreshTokenService(repository, chainRevoker, TTL,
+        // The clock is fixed and the tokens carry the timestamps: the grace window is
+        // about how long ago a token was rotated, not about what time it is.
+        service = new RefreshTokenService(repository, chainRevoker, TTL, GRACE,
                 Clock.fixed(T0, ZoneOffset.UTC));
         userId = UUID.randomUUID();
     }
@@ -81,7 +84,9 @@ class RefreshTokenServiceTest {
         String raw = "a-token-that-was-already-used";
         RefreshToken used = RefreshToken.issue(userId, SecureTokens.hash(raw),
                 T0.plus(TTL));
-        used.rotateTo(UUID.randomUUID(), T0);          // already rotated away
+        // Rotated long enough ago that the concurrency grace window cannot apply: a
+        // replay this late is a leaked value, not the other tab's request arriving.
+        used.rotateTo(UUID.randomUUID(), T0.minus(GRACE).minusSeconds(1));
         when(repository.findByTokenHash(SecureTokens.hash(raw)))
                 .thenReturn(Optional.of(used));
 
@@ -121,5 +126,83 @@ class RefreshTokenServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
+    }
+
+    /**
+     * A token that was rotated away at {@code rotatedAt} in favour of {@code successor},
+     * stubbed into the repository under its hash.
+     */
+    private RefreshToken rotatedAwayAt(String raw, Instant rotatedAt, RefreshToken successor) {
+        RefreshToken token = RefreshToken.issue(userId, SecureTokens.hash(raw), T0.plus(TTL));
+        token.rotateTo(successor.id(), rotatedAt);
+        when(repository.findByTokenHash(SecureTokens.hash(raw))).thenReturn(Optional.of(token));
+        return token;
+    }
+
+    private RefreshToken liveSuccessor() {
+        return RefreshToken.issue(userId, SecureTokens.hash("the-successor"), T0.plus(TTL));
+    }
+
+    @Test
+    void aConcurrentRefreshInsideTheGraceWindowIsServedWithoutANewToken() {
+        RefreshToken successor = liveSuccessor();
+        // Exactly on the edge of the window, which is inclusive.
+        rotatedAwayAt("the-token-both-tabs-sent", T0.minus(GRACE), successor);
+        when(repository.findById(successor.id())).thenReturn(Optional.of(successor));
+
+        RefreshTokenService.Rotation rotation = service.rotate("the-token-both-tabs-sent");
+
+        assertThat(rotation.userId()).isEqualTo(userId);
+        // Null rather than a fresh token: the two tabs share one cookie, so the browser
+        // keeps whichever Set-Cookie lands last. Issuing a second token here would
+        // orphan the winner's and leave the user one refresh from being logged out.
+        assertThat(rotation.rawToken()).isNull();
+        verify(chainRevoker, never()).revokeChain(any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aReplayAfterTheGraceWindowRevokesTheChainEvenWithALiveSuccessor() {
+        RefreshToken successor = liveSuccessor();
+        rotatedAwayAt("a-token-replayed-too-late", T0.minus(GRACE).minusSeconds(1), successor);
+
+        assertThatThrownBy(() -> service.rotate("a-token-replayed-too-late"))
+                .isInstanceOf(ApiException.class);
+
+        verify(chainRevoker).revokeChain(userId);
+        // The age is checked before the successor is loaded, so a stale replay costs no query.
+        verify(repository, never()).findById(any());
+    }
+
+    @Test
+    void aTokenRevokedByLogoutIsNeverForgivenInsideTheWindow() {
+        String raw = "a-token-killed-by-logout";
+        RefreshToken loggedOut = RefreshToken.issue(userId, SecureTokens.hash(raw), T0.plus(TTL));
+        loggedOut.revoke(T0);           // revoked without a rotation: replacedBy stays null
+        when(repository.findByTokenHash(SecureTokens.hash(raw)))
+                .thenReturn(Optional.of(loggedOut));
+
+        assertThatThrownBy(() -> service.rotate(raw)).isInstanceOf(ApiException.class);
+
+        // Forgiving this would make logout reversible for anyone still holding the cookie.
+        verify(chainRevoker).revokeChain(userId);
+        // And the successor is never looked up, because there is no successor id to look
+        // up: asking the repository for null would throw rather than revoke the chain.
+        verify(repository, never()).findById(any());
+    }
+
+    @Test
+    void aReplayIsNotForgivenOnceTheSuccessorHasBeenRevoked() {
+        RefreshToken successor = liveSuccessor();
+        successor.revoke(T0);           // the chain was revoked after the rotation
+        rotatedAwayAt("a-token-whose-chain-is-dead", T0.minusSeconds(1), successor);
+        when(repository.findById(successor.id())).thenReturn(Optional.of(successor));
+
+        assertThatThrownBy(() -> service.rotate("a-token-whose-chain-is-dead"))
+                .isInstanceOf(ApiException.class);
+
+        // A deliberate revocation outranks the window; otherwise it would resurrect a
+        // session somebody ended on purpose.
+        verify(chainRevoker).revokeChain(userId);
     }
 }
