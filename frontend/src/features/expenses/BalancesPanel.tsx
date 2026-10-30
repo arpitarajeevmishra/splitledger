@@ -55,7 +55,7 @@ export function BalancesPanel({ group, youId }: { group: GroupDetail; youId: str
           {balances.net.map((balance) => (
             <li
               key={balance.userId}
-              className="flex items-center justify-between border-b border-line px-4 py-2.5 last:border-b-0"
+              className="flex items-center justify-between border-b border-line px-4 py-3 last:border-b-0"
             >
               <span className="min-w-0 truncate text-sm text-ink">{nameOf(balance.userId)}</span>
               <span

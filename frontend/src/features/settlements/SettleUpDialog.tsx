@@ -172,7 +172,7 @@ export function SettleUpDialog({
             id="settle-to"
             value={toUser}
             onChange={(event) => setToUser(event.target.value)}
-            className="h-10 rounded border border-line bg-surface-1 px-3 font-mono text-sm text-ink focus:border-info focus:outline-none"
+            className="h-10 rounded border border-line bg-surface-1 px-3 font-mono text-sm text-ink focus:border-info"
           >
             {others.map((member) => (
               <option key={member.userId} value={member.userId}>

@@ -144,7 +144,7 @@ export function ExpenseForm({
             id="paid-by"
             value={paidBy}
             onChange={(event) => setPaidBy(event.target.value)}
-            className="h-10 rounded border border-line bg-surface-1 px-3 font-mono text-sm text-ink focus:border-info focus:outline-none"
+            className="h-10 rounded border border-line bg-surface-1 px-3 font-mono text-sm text-ink focus:border-info"
           >
             {members.map((member) => (
               <option key={member.userId} value={member.userId}>

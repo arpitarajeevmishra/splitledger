@@ -31,7 +31,7 @@ export function Field({
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           className={`h-10 w-full rounded border bg-surface-1 pl-3 font-mono text-sm text-ink
-            placeholder:text-ink-dim focus:outline-none
+            placeholder:text-ink-dim
             ${isPassword ? 'pr-14' : 'pr-3'}
             ${error ? 'border-negative' : 'border-line focus:border-info'}`}
           {...props}
@@ -50,17 +50,17 @@ export function Field({
              below: invisible, and the hit region buttons.md asks for.
 
              transition-[color], not transition-colors: Tailwind v4 includes outline-color
-             in that set, so the shorthand fades the focus ring in over 150ms. Measured
-             mid-transition it was at a third of its contrast -- a keyboard ring has to be
-             at full strength the instant focus lands. Only the hover tint eases. */
+             in that set, so the shorthand fades in the focus ring that index.css draws on
+             every focus-visible control. Measured mid-transition it sat at a third of its
+             contrast, and a keyboard ring has to be at full strength the instant focus
+             lands. Only the hover tint eases. */
           <button
             type="button"
             onClick={() => setRevealed((shown) => !shown)}
             aria-label={revealed ? 'Hide password' : 'Show password'}
             className="absolute top-1/2 right-0 flex h-11 w-14 -translate-y-1/2 cursor-pointer
               items-center justify-end rounded pr-3 font-mono text-[11px] font-medium
-              tracking-[0.06em] text-ink-muted uppercase transition-[color] hover:text-ink
-              focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+              tracking-[0.06em] text-ink-muted uppercase transition-[color] hover:text-ink"
           >
             {revealed ? 'Hide' : 'Show'}
           </button>

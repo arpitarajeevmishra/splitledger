@@ -68,7 +68,10 @@ export function SplitEditor({
               type="button"
               aria-pressed={splitType === type}
               onClick={() => onSplitTypeChange(type)}
-              className={`h-8 rounded border px-3 font-mono text-[11px] tracking-[0.04em] uppercase transition-colors ${
+              /* Named properties rather than transition-colors: that shorthand includes
+                 outline-color in Tailwind v4, which fades in the base layer's focus ring.
+                 See Button.tsx. */
+              className={`h-8 rounded border px-3 font-mono text-[11px] tracking-[0.04em] uppercase transition-[color,background-color,border-color] ${
                 splitType === type
                   ? 'border-accent bg-accent text-on-accent'
                   : 'border-line text-ink-muted hover:border-line-strong hover:text-ink'
@@ -112,7 +115,7 @@ export function SplitEditor({
                     inputMode="decimal"
                     value={values.get(member.userId) ?? ''}
                     onChange={(event) => onValueChange(member.userId, event.target.value)}
-                    className="h-8 w-20 rounded border border-line bg-surface-1 px-2 text-right font-mono text-xs text-ink focus:border-info focus:outline-none"
+                    className="h-8 w-20 rounded border border-line bg-surface-1 px-2 text-right font-mono text-xs text-ink focus:border-info"
                   />
                   <span className="w-3 font-mono text-[10px] text-ink-dim">
                     {UNIT_HINT[splitType]}

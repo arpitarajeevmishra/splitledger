@@ -92,7 +92,7 @@ export function ExpenseDetail({
               const coverage = coverageOf(split, expense, balances?.pairwise)
               const hint = inputHint(expense, split)
               return (
-                <li key={split.userId} className="flex items-start justify-between gap-3 py-2.5">
+                <li key={split.userId} className="flex items-start justify-between gap-3 py-3">
                   <span className="min-w-0 flex-1 truncate text-sm text-ink">
                     {nameOf(split.userId)}
                     {hint !== null && (

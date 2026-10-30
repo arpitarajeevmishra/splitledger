@@ -53,7 +53,7 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
       )}
 
       {expenses?.length === 0 && (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-6 text-center">
           <p className="text-sm text-ink-muted">No expenses yet.</p>
           <p className="mt-1 text-xs text-ink-dim">
             Add one and everyone&rsquo;s balance updates straight away.
@@ -76,7 +76,7 @@ export function ExpenseList({ group }: { group: GroupDetail }) {
                 <button
                   type="button"
                   onClick={() => setOpenExpense(expense.id)}
-                  className="min-w-0 flex-1 cursor-pointer rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+                  className={`min-w-0 flex-1 cursor-pointer rounded text-left`}
                 >
                   <span
                     className={`block truncate text-sm ${
