@@ -1,10 +1,15 @@
 # The built app is static files; nginx serves them. No Node in the runtime image -- a
 # production web server has no reason to carry a package manager and a toolchain.
 
+# node:26-alpine, not the 25 Dependabot proposed: Node 25 reached end of life on
+# 2026-06-01 and receives no security patches, while 26 became Active LTS on 2026-10-28.
+# Only the build stage, so the blast radius is a toolchain rather than a running server --
+# but an unpatched toolchain is still what compiles the bundle people download.
+#
 # Built on the runner's own architecture: `npm run build` emits static files that are the
 # same bytes everywhere, so there is nothing for an emulated arm64 build stage to do but
 # take longer. The nginx runtime stage below is what varies per architecture.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+FROM --platform=$BUILDPLATFORM node:26-alpine AS build
 WORKDIR /build
 
 COPY package.json package-lock.json ./
@@ -15,7 +20,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.29-alpine AS runtime
+FROM nginx:1.30-alpine AS runtime
 
 # The SPA talks to /api/v1 on its own origin (finding C13): one image runs in every
 # environment, and the refresh cookie's SameSite=Strict only works because the app and the
