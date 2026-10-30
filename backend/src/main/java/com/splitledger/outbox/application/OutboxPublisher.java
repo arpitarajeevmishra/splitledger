@@ -71,7 +71,7 @@ public class OutboxPublisher {
      * @return how many events were published, which is what a test and a metric both want
      *     and what a void method would make either of them guess at
      */
-    @Scheduled(fixedDelayString = "${app.outbox.poll-delay-ms}")
+    @Scheduled(cron = "${app.outbox.poll-cron}")
     @Transactional
     public int publishBatch() {
         List<OutboxEvent> claimed = events.claimUnpublished(batchSize);

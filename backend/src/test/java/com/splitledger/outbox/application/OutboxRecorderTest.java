@@ -32,8 +32,11 @@ class OutboxRecorderTest {
     @Mock
     private OutboxEventRepository events;
 
+    @Mock
+    private OutboxNudge nudge;
+
     private OutboxRecorder recorder() {
-        return new OutboxRecorder(events, JsonMapper.builder().build(),
+        return new OutboxRecorder(events, JsonMapper.builder().build(), nudge,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -85,5 +88,17 @@ class OutboxRecorderTest {
         // fresh each poll, making every retry look like a new event and defeating
         // processed_events entirely -- while every other assertion here still passed.
         assertThat(saved.getValue().envelope().eventId()).isEqualTo(saved.getValue().id());
+    }
+
+    @Test
+    void asks_for_a_publish_once_the_transaction_commits() {
+        recorder().record("expense", EXPENSE, GROUP, "expense.created",
+                new Payload(EXPENSE, "Dinner", 90_000L));
+
+        // Without this the only path is the poll, and the poll has to be slow: at a query
+        // a second it kept a managed Postgres awake permanently. The nudge is what lets
+        // the backstop be fifteen minutes without notifications being fifteen minutes
+        // late.
+        org.mockito.Mockito.verify(nudge).afterCommit();
     }
 }

@@ -69,6 +69,25 @@ services:
       PAYMENTS_POLL_CRON: "${PAYMENTS_POLL_CRON:-0 */15 * * * *}"
       SETTLEMENT_EXPIRY_CRON: "${SETTLEMENT_EXPIRY_CRON:-0 0 * * * *}"
       IDEMPOTENCY_PURGE_CRON: "${IDEMPOTENCY_PURGE_CRON:-0 0 3 * * *}"
+      # Added after the fact, and that delay is the whole lesson: SL-701 and SL-704 shipped
+      # schedules whose image defaults are development speeds -- a poll every second and
+      # gauges every thirty -- and nothing passed them through here, so the deployed
+      # database never suspended once. The reasoning above lived in this file and the
+      # defaults lived in application.yml, and nothing connected them.
+      #
+      # On the same minute as PAYMENTS_POLL_CRON on purpose: one wake serves every job.
+      OUTBOX_POLL_CRON: "${OUTBOX_POLL_CRON:-0 */15 * * * *}"
+      METRICS_REFRESH_CRON: "${METRICS_REFRESH_CRON:-0 */15 * * * *}"
+      # Nightly, alongside the idempotency purge, for the same reason.
+      LEDGER_RECONCILIATION_CRON: "${LEDGER_RECONCILIATION_CRON:-0 0 3 * * *}"
+      # Email verification (SL-901). The image's defaults are sensible; these are here so
+      # they can be tightened on a running box without a release.
+      VERIFICATION_TTL: ${VERIFICATION_TTL:-PT24H}
+      VERIFICATION_RESENDS_PER_HOUR: ${VERIFICATION_RESENDS_PER_HOUR:-3}
+      # The guest tour (SL-904). Blank means no demo account, no endpoint and no button.
+      # Setting it seeds a demo group into this database on the next start, which is why
+      # it is blank by default rather than merely undocumented.
+      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD:-}
       # Per-account caps (SL-906). Passed through so they can be tightened from .env on a
       # running box; the image's own defaults apply when they are not set.
       LIMIT_GROUPS_PER_ACCOUNT: ${LIMIT_GROUPS_PER_ACCOUNT:-20}

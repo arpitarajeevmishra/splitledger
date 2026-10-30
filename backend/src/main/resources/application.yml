@@ -135,12 +135,25 @@ app:
     # held, never queried inside a scrape: a gauge callback runs on whichever thread is
     # serving /actuator/prometheus, with no transaction and no bounded time, so a database
     # hiccup there would hang the scrape -- monitoring taking down what it monitors.
-    refresh-ms: ${METRICS_REFRESH_MS:60000}
+    #
+    # A cron rather than a fixed delay, so the deployed value lands on the same minute as
+    # every other scheduled job and one database wake serves all of them. A fixed delay
+    # drifts against a cron and would wake managed Postgres on its own schedule, which is
+    # how an idle application comes to cost money.
+    refresh-cron: ${METRICS_REFRESH_CRON:*/30 * * * * *}
   outbox:
-    # How long an event may sit unpublished. One second, because the whole latency budget
-    # of the outbox is this number (ADR-005) -- an event is written on commit and does
-    # nothing until the next poll picks it up, so this is what "eventually" means here.
-    poll-delay-ms: ${OUTBOX_POLL_DELAY_MS:1000}
+    # The backstop, not the main path. A commit that records an event nudges the publisher
+    # directly (SL-701, amended), so this exists for what a nudge cannot survive: a process
+    # that died between the commit and the publish.
+    #
+    # It therefore does not need to be frequent, and must not be: at one second it was a
+    # query every second forever against a managed Postgres that suspends when idle and
+    # bills by the hour it stays awake, so the deployed database never slept at all. A cron
+    # so the deployed value shares a minute with every other job and one wake serves them.
+    poll-cron: ${OUTBOX_POLL_CRON:*/2 * * * * *}
+    # Publish as soon as a commit lands, which is what lets the poll above be a backstop.
+    # Turning it off falls back to polling alone: correct, just slower.
+    nudge-enabled: ${OUTBOX_NUDGE_ENABLED:true}
     # Claimed and locked together, so the batch is also how much work one poll holds a
     # lock over. Large enough that a burst drains in a few polls, small enough that a
     # second publisher has rows left to take.

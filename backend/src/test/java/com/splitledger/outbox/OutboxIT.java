@@ -41,7 +41,13 @@ import org.springframework.transaction.support.TransactionTemplate;
         // The scheduled publisher is disabled for these: a background poll draining the
         // table mid-assertion would make "the event is still unpublished" a race rather
         // than a fact. Publishing is driven explicitly instead.
-        "app.outbox.poll-delay-ms=3600000"
+        // A cron that never fires this century, so publishing is driven only
+        // by the explicit calls below.
+        "app.outbox.poll-cron=0 0 5 31 2 ?",
+        // And no nudge, for the same reason: publishing has to happen
+        // only where these tests ask for it, or "still unpublished" is
+        // a race against a thread that commits faster than the assert.
+        "app.outbox.nudge-enabled=false"
 })
 class OutboxIT {
 

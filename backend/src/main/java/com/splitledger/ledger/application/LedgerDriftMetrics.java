@@ -34,7 +34,7 @@ public class LedgerDriftMetrics {
                 AtomicLong::doubleValue);
     }
 
-    @Scheduled(fixedDelayString = "${app.metrics.refresh-ms}")
+    @Scheduled(cron = "${app.metrics.refresh-cron}")
     @Transactional(readOnly = true)
     public void refresh() {
         long current = postings.reconciliationDrift();
