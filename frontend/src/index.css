@@ -21,12 +21,23 @@
   --border-strong: #b9cdec;
   --text: #0b0f17;
   --text-muted: #4b5563;
-  --text-dim: #6b7280;
-  --accent: #0b0f17;          /* obsidian CTA */
+  --text-dim: #636b7a;
+  --accent: #0b0f17; /* obsidian CTA */
   --on-accent: #ffffff;
-  --positive: #10b981;
-  --negative: #e11d48;
-  --info: #0ea5e9;
+  /*
+   * Darker than the obvious emerald/rose/sky, and measured rather than chosen by eye.
+   * These sit on --surface-1 and --surface-2, not on white, and against those the bright
+   * versions failed WCAG AA for small text: emerald #10b981 was 2.30:1, sky #0ea5e9 was
+   * 2.51:1, rose #e11d48 was 4.26:1, all on --surface-2. --info is also the focus ring,
+   * where 2.64:1 was below even the 3:1 that non-text contrast requires, so keyboard
+   * focus was nearly invisible in light mode.
+   *
+   * Dark mode keeps its brighter values: on a near-black surface they already measure
+   * 6-9:1. A token does not have to be the same hex in both themes, only the same idea.
+   */
+  --positive: #047857; /* 4.98:1 on --surface-2 */
+  --negative: #be123c; /* 5.70:1 */
+  --info: #0369a1; /* 5.38:1, and 5.65:1 as a focus ring on --surface-1 */
 }
 
 /* Dark is the design's preferred mode, so it follows the system unless overridden. */
@@ -39,8 +50,9 @@
     --border-strong: #334155;
     --text: #f8fafc;
     --text-muted: #94a3b8;
-    --text-dim: #64748b;
-    --accent: #10b981;        /* luminous emerald */
+    /* #64748b measured 3.27:1 on --surface-2 and carries every 11px meta label. */
+    --text-dim: #8795a9;
+    --accent: #10b981; /* luminous emerald */
     --on-accent: #0f131c;
     --positive: #34d399;
     --negative: #fb7185;
@@ -56,7 +68,7 @@
   --border-strong: #334155;
   --text: #f8fafc;
   --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  --text-dim: #8795a9;
   --accent: #10b981;
   --on-accent: #0f131c;
   --positive: #34d399;
@@ -85,6 +97,17 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
 
   /* "roundedness: 1" -- compact radii, no casual curves. */
+  /*
+   * Two tiers, and the nesting rule is the whole system: `rounded-lg` for anything that
+   * is a container -- a panel, the dialog, the notification popover, the auth card -- and
+   * plain `rounded` for everything that sits inside one: inputs, alerts, chips, option
+   * rows. An inner corner must be tighter than the corner it sits in, or the two radii
+   * fight and the inner element looks like it is bulging out of its container.
+   *
+   * `rounded-full` is the third tier and exists for exactly one thing: the unread badge.
+   * sm and xl are scale headroom; nothing uses them, and a new component should reach for
+   * one of the two tiers above before inventing a third.
+   */
   --radius-sm: 2px;
   --radius-DEFAULT: 4px;
   --radius-lg: 8px;
@@ -111,4 +134,36 @@ body {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/*
+ * One focus indicator, for everything focusable.
+ *
+ * It had already drifted three ways: buttons drew a 2px offset outline, text inputs set
+ * `outline-none` and tinted their 1px border instead, and links fell through to whatever
+ * the browser draws -- in Chrome an amber ring that belongs to no part of this palette.
+ * The input's answer was the weakest: a hairline colour change is how a focus indicator
+ * becomes technically present and practically invisible.
+ *
+ * Here rather than on each component, because the failure mode of a per-component ring is
+ * the component that forgets it, and that component is always the one added next. Written
+ * against element selectors so anything focusable is covered without being told.
+ *
+ * `--info` measures 5.65:1 on --surface-1 in light and 7.97:1 in dark. Before the token
+ * was corrected it was 2.64:1, below even the 3:1 WCAG asks of a non-text indicator.
+ *
+ * `:focus-visible`, not `:focus`: a pointer user clicking a field should not get a ring
+ * they did not ask for, while a keyboard user must.
+ */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--info);
+    outline-offset: 2px;
+    border-radius: var(--radius-DEFAULT);
+  }
 }

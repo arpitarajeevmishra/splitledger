@@ -22,7 +22,7 @@ export function Field({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         className={`h-10 rounded border bg-surface-1 px-3 font-mono text-sm text-ink
-          placeholder:text-ink-dim focus:outline-none
+          placeholder:text-ink-dim
           ${error ? 'border-negative' : 'border-line focus:border-info'}`}
         {...props}
       />

@@ -21,16 +21,16 @@ export function GroupsPanel() {
         <Button onClick={() => setCreating(true)}>New group</Button>
       </div>
 
-      {isPending && <p className="px-4 py-8 text-center text-sm text-ink-dim">Loading groups…</p>}
+      {isPending && <p className="px-4 py-6 text-center text-sm text-ink-dim">Loading groups…</p>}
 
       {isError && (
-        <p role="alert" className="px-4 py-8 text-center text-sm text-negative">
+        <p role="alert" className="px-4 py-6 text-center text-sm text-negative">
           {messageFor(error, 'Could not load your groups.')}
         </p>
       )}
 
       {groups?.length === 0 && (
-        <div className="px-4 py-8 text-center">
+        <div className="px-4 py-6 text-center">
           <p className="text-sm text-ink-muted">No groups yet.</p>
           <p className="mt-1 text-xs text-ink-dim">
             Create one, then invite the people you share expenses with.

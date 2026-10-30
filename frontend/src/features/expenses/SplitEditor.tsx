@@ -112,7 +112,7 @@ export function SplitEditor({
                     inputMode="decimal"
                     value={values.get(member.userId) ?? ''}
                     onChange={(event) => onValueChange(member.userId, event.target.value)}
-                    className="h-8 w-20 rounded border border-line bg-surface-1 px-2 text-right font-mono text-xs text-ink focus:border-info focus:outline-none"
+                    className="h-8 w-20 rounded border border-line bg-surface-1 px-2 text-right font-mono text-xs text-ink focus:border-info"
                   />
                   <span className="w-3 font-mono text-[10px] text-ink-dim">
                     {UNIT_HINT[splitType]}

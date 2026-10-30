@@ -5,8 +5,7 @@ type Variant = 'primary' | 'ghost'
 /** 36px compact height, 4px radius, flat fill, mono label -- design system, Buttons. */
 const BASE =
   'inline-flex h-9 items-center justify-center rounded px-4 font-mono text-[13px] font-semibold ' +
-  'transition-colors disabled:cursor-not-allowed disabled:opacity-50 ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info'
+  'transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent text-on-accent hover:opacity-90',

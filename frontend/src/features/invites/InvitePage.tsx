@@ -83,9 +83,7 @@ export function InvitePage() {
           Knot
         </p>
 
-        {preview.isPending && (
-          <p className="mt-6 text-sm text-ink-dim">Checking the invite…</p>
-        )}
+        {preview.isPending && <p className="mt-6 text-sm text-ink-dim">Checking the invite…</p>}
 
         {preview.isError && (
           <div className="mt-6">

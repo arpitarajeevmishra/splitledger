@@ -70,7 +70,7 @@ export function NotificationBell() {
         onClick={() => setOpen((wasOpen) => !wasOpen)}
         aria-expanded={open}
         aria-label={count === 0 ? 'Notifications' : `Notifications, ${count} unread`}
-        className="relative cursor-pointer rounded px-2 py-1 font-mono text-[11px] tracking-[0.06em] text-ink-dim uppercase hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+        className={`relative cursor-pointer rounded px-2 py-1 font-mono text-[11px] tracking-[0.06em] text-ink-dim uppercase hover:text-ink`}
       >
         Inbox
         {/* text-surface rather than text-white: --negative is a deep rose in light mode and
@@ -85,6 +85,9 @@ export function NotificationBell() {
         )}
       </button>
 
+      {/* px-3 inside, rather than the px-4 every full-width panel uses: this is a 22rem
+          popover, and a 16px gutter each side eats proportionally far more of the line.
+          The vertical rhythm is the standard py-3, so only the horizontal axis differs. */}
       {open && (
         <div className="absolute right-0 z-20 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-surface-1 shadow-lg">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
@@ -122,7 +125,7 @@ export function NotificationBell() {
                   <button
                     type="button"
                     onClick={() => onOpen(notification)}
-                    className="block w-full cursor-pointer px-3 py-2.5 text-left hover:bg-surface-2"
+                    className="block w-full cursor-pointer px-3 py-3 text-left hover:bg-surface-2"
                   >
                     <span
                       className={`block text-sm ${

@@ -13,10 +13,7 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   email: z.string().min(1, 'Required').email('Enter a valid email').max(254),
   name: z.string().min(1, 'Required').max(100),
-  password: z
-    .string()
-    .min(8, 'At least 8 characters')
-    .max(72, 'At most 72 characters'),
+  password: z.string().min(8, 'At least 8 characters').max(72, 'At most 72 characters'),
 })
 
 export type LoginValues = z.infer<typeof loginSchema>
