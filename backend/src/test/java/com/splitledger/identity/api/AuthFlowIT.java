@@ -122,15 +122,37 @@ class AuthFlowIT {
         assertThat(rotated).isNotNull();
         assertThat(rotated.getValue()).isNotEqualTo(loginCookie.getValue());
 
-        // --- replaying the old cookie is rejected: reuse means it leaked ---
+        // --- the same cookie again, moments later, is the other tab, not a thief (O-9) ---
+        // Two tabs are separate JavaScript contexts sharing one cookie, so both send the
+        // value that was live when their page loaded and nothing on the client can stop
+        // them. The loser gets an access token and deliberately no Set-Cookie: the browser
+        // must keep the token the winning tab stored.
+        MvcResult raced = mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(new Cookie("refresh_token", loginCookie.getValue())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andReturn();
+        assertThat(raced.getResponse().getCookie("refresh_token")).isNull();
+
+        // --- and the winner's cookie is still live, which is the whole point ---
+        MvcResult refreshedAgain = mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(new Cookie("refresh_token", rotated.getValue())))
+                .andExpect(status().isOk())
+                .andReturn();
+        Cookie current = refreshedAgain.getResponse().getCookie("refresh_token");
+        assertThat(current).isNotNull();
+
+        // --- replaying a cookie whose successor is already dead is read as a leak ---
+        // The grace window only ever covers the live tip of the chain. The login cookie's
+        // replacement has since been rotated away, so this is reuse and every token for
+        // the user goes -- including the one this session is holding right now.
         mockMvc.perform(post("/api/v1/auth/refresh")
                         .cookie(new Cookie("refresh_token", loginCookie.getValue())))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_INVALID"));
 
-        // --- and the rotated one is dead too, because the whole chain was revoked ---
         mockMvc.perform(post("/api/v1/auth/refresh")
-                        .cookie(new Cookie("refresh_token", rotated.getValue())))
+                        .cookie(new Cookie("refresh_token", current.getValue())))
                 .andExpect(status().isUnauthorized());
 
         // --- the profile endpoints, which take no user id in the path ---

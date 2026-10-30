@@ -32,20 +32,23 @@ public class RefreshTokenService {
     private final RefreshTokenRepository tokens;
     private final RefreshTokenChainRevoker chainRevoker;
     private final Duration refreshTtl;
+    private final Duration refreshGrace;
     private final Clock clock;
 
     @Autowired
     RefreshTokenService(RefreshTokenRepository tokens, RefreshTokenChainRevoker chainRevoker,
-            @Value("${app.auth.refresh-ttl}") Duration refreshTtl) {
-        this(tokens, chainRevoker, refreshTtl, Clock.systemUTC());
+            @Value("${app.auth.refresh-ttl}") Duration refreshTtl,
+            @Value("${app.auth.refresh-grace}") Duration refreshGrace) {
+        this(tokens, chainRevoker, refreshTtl, refreshGrace, Clock.systemUTC());
     }
 
     /** Visible for testing. */
     RefreshTokenService(RefreshTokenRepository tokens, RefreshTokenChainRevoker chainRevoker,
-            Duration refreshTtl, Clock clock) {
+            Duration refreshTtl, Duration refreshGrace, Clock clock) {
         this.tokens = tokens;
         this.chainRevoker = chainRevoker;
         this.refreshTtl = refreshTtl;
+        this.refreshGrace = refreshGrace;
         this.clock = clock;
     }
 
@@ -71,6 +74,14 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new ApiException(ErrorCode.REFRESH_TOKEN_INVALID));
 
         if (existing.isRevoked()) {
+            if (supersededMomentsAgo(existing, now)) {
+                // Two tabs refreshed at once (O-9). They are separate JavaScript contexts
+                // sharing one cookie, so no client-side guard can stop them, and treating
+                // the loser as a leak logged out a user who did nothing wrong.
+                log.debug("Concurrent refresh for user {}; serving an access token without "
+                        + "rotating", existing.userId());
+                return new Rotation(existing.userId(), null);
+            }
             // Someone presented a token we already rotated away. Either it leaked or a
             // client is replaying; both mean every token in this chain is suspect.
             log.warn("Refresh token reuse detected for user {}; revoking the chain",
@@ -92,6 +103,40 @@ public class RefreshTokenService {
         existing.rotateTo(replacement.id(), now);
         tokens.save(existing);
         return new Rotation(existing.userId(), replacementRaw);
+    }
+
+    /**
+     * Whether this is the losing half of a race rather than a replayed leak (O-9).
+     *
+     * <p>Three conditions, and each rules out a different thing:
+     *
+     * <ul>
+     *   <li><b>It was rotated, not revoked.</b> {@code replacedBy} is null when a token was
+     *       killed by logout or by a chain revocation, and replaying one of those is never
+     *       benign -- forgiving it would make logout reversible for anyone holding the old
+     *       cookie.
+     *   <li><b>It was rotated moments ago.</b> A leaked token replayed next week is an
+     *       attack; one replayed inside the window is the other tab's request arriving.
+     *   <li><b>Its successor is still live.</b> If the chain has since been revoked, the
+     *       revocation wins. This is what stops the window from resurrecting a session
+     *       somebody deliberately ended.
+     * </ul>
+     *
+     * <p>What the caller gets is deliberately asymmetric: an access token, and <b>no new
+     * refresh token</b>. A thief replaying inside the window therefore gains fifteen
+     * minutes and no way to extend them, while the legitimate browser keeps the live
+     * cookie its other tab already stored. Full forgiveness -- handing out a fresh refresh
+     * token -- would turn a bounded window into a foothold.
+     */
+    private boolean supersededMomentsAgo(RefreshToken replayed, Instant now) {
+        Instant rotatedAt = replayed.revokedAt();
+        if (replayed.replacedBy() == null || rotatedAt == null
+                || rotatedAt.plus(refreshGrace).isBefore(now)) {
+            return false;
+        }
+        return tokens.findById(replayed.replacedBy())
+                .filter(successor -> successor.isUsable(now))
+                .isPresent();
     }
 
     /** Ordinary logout: the caller's transaction commits, so no special propagation. */
@@ -119,6 +164,11 @@ public class RefreshTokenService {
         return refreshTtl;
     }
 
+    /**
+     * @param rawToken the replacement, or <b>null</b> meaning "keep the one you have":
+     *     the caller lost a race with another tab and the cookie in the browser is
+     *     already the live token (O-9)
+     */
     public record Rotation(UUID userId, String rawToken) {
     }
 
