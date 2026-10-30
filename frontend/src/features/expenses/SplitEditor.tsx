@@ -68,7 +68,10 @@ export function SplitEditor({
               type="button"
               aria-pressed={splitType === type}
               onClick={() => onSplitTypeChange(type)}
-              className={`h-8 rounded border px-3 font-mono text-[11px] tracking-[0.04em] uppercase transition-colors ${
+              /* Named properties rather than transition-colors: that shorthand includes
+                 outline-color in Tailwind v4, which fades in the base layer's focus ring.
+                 See Button.tsx. */
+              className={`h-8 rounded border px-3 font-mono text-[11px] tracking-[0.04em] uppercase transition-[color,background-color,border-color] ${
                 splitType === type
                   ? 'border-accent bg-accent text-on-accent'
                   : 'border-line text-ink-muted hover:border-line-strong hover:text-ink'
