@@ -3,6 +3,7 @@ package com.splitledger.outbox.application;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,16 @@ public class OutboxNudge {
     private final TaskExecutor executor;
     private final boolean enabled;
 
-    OutboxNudge(ObjectProvider<OutboxPublisher> publisher, TaskExecutor executor,
+    /**
+     * Named, because {@code TaskExecutor} is ambiguous here and the ambiguity is not just
+     * a wiring detail. {@code @EnableScheduling} registers a {@code taskScheduler} that
+     * also implements {@code TaskExecutor}, so an unqualified injection fails to start --
+     * and the one that would have been chosen by name is the wrong one anyway: running
+     * publishes on the scheduler's pool means a slow publish can delay the scheduled poll
+     * that exists to back it up.
+     */
+    OutboxNudge(ObjectProvider<OutboxPublisher> publisher,
+            @Qualifier("applicationTaskExecutor") TaskExecutor executor,
             @Value("${app.outbox.nudge-enabled:true}") boolean enabled) {
         this.publisher = publisher;
         this.executor = executor;
